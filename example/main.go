@@ -17,7 +17,9 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
-	if err := tui.Run(ctx, os.Args[1], "./workspace", ""); err != nil {
+	if err := tui.Run(ctx, os.Args[1], "./workspace", "", tui.RunOptions{
+		TrustedRepoPrefixes: []string{"github.com/gptscript-ai/context"},
+	}); err != nil {
 		log.Fatal(err)
 	}
 

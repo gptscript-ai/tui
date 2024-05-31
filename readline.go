@@ -11,10 +11,10 @@ import (
 	"github.com/adrg/xdg"
 	"github.com/chzyer/readline"
 	"github.com/fatih/color"
-	"github.com/gptscript-ai/go-gptscript"
 )
 
 type prompter struct {
+	prompt    string
 	readliner *readline.Instance
 }
 
@@ -50,6 +50,20 @@ func newReadlinePrompter(tool string) (*prompter, error) {
 	}, nil
 }
 
+func (r *prompter) ReadPassword() (string, bool, error) {
+	cfg := r.readliner.GenPasswordConfig()
+	cfg.MaskRune = '*'
+	cfg.Prompt = r.prompt
+	cfg.UniqueEditLine = true
+	line, err := r.readliner.ReadPasswordWithConfig(cfg)
+	if errors.Is(err, readline.ErrInterrupt) {
+		return "", false, nil
+	} else if errors.Is(err, io.EOF) {
+		return "", false, nil
+	}
+	return strings.TrimSpace(string(line)), true, nil
+}
+
 func (r *prompter) Readline() (string, bool, error) {
 	line, err := r.readliner.Readline()
 	if errors.Is(err, readline.ErrInterrupt) {
@@ -60,14 +74,9 @@ func (r *prompter) Readline() (string, bool, error) {
 	return strings.TrimSpace(line), true, nil
 }
 
-func (r *prompter) SetPrompt(run *gptscript.Run, prg gptscript.Program) {
-	out, _ := run.RawOutput()
-	toolID, _ := out["toolID"].(string)
-	if name := prg.ToolSet[toolID].Name; name == "" {
-		r.readliner.SetPrompt(color.GreenString(">") + " ")
-	} else {
-		r.readliner.SetPrompt(color.GreenString("Talking to: "+name+">") + " ")
-	}
+func (r *prompter) SetPrompt(text string) {
+	r.prompt = color.GreenString(text+">") + " "
+	r.readliner.SetPrompt(r.prompt)
 }
 
 func (r *prompter) Close() error {
