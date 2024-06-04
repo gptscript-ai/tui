@@ -20,6 +20,7 @@ func main() {
 	if err := tui.Run(ctx, os.Args[1], tui.RunOptions{
 		Workspace:           "./workspace",
 		TrustedRepoPrefixes: []string{"github.com/gptscript-ai/context"},
+		DisableCache:        true,
 	}); err != nil {
 		log.Fatal(err)
 	}

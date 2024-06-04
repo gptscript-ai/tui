@@ -2,8 +2,8 @@ package tui
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 
@@ -21,6 +21,8 @@ type RunOptions struct {
 	Input               string
 	CacheDir            string
 	SubTool             string
+	ChatState           string
+	SaveChatStateFile   string
 	Workspace           string
 }
 
@@ -40,6 +42,8 @@ func complete(opts ...RunOptions) (result RunOptions) {
 		result.CacheDir = first(opt.CacheDir, result.CacheDir)
 		result.SubTool = first(opt.SubTool, result.SubTool)
 		result.Workspace = first(opt.Workspace, result.Workspace)
+		result.SaveChatStateFile = first(opt.SaveChatStateFile, result.SaveChatStateFile)
+		result.ChatState = first(opt.ChatState, result.ChatState)
 	}
 	return
 }
@@ -50,7 +54,7 @@ func Run(ctx context.Context, tool string, opts ...RunOptions) error {
 		input = opt.Input
 	)
 
-	client, err := gptscript.NewClient()
+	client, err := gptscript.NewGPTScript()
 	if err != nil {
 		return err
 	}
@@ -67,14 +71,24 @@ func Run(ctx context.Context, tool string, opts ...RunOptions) error {
 	}
 	defer ui.Close()
 
+	firstInput := opt.Input
+	if firstInput == "" && opt.ChatState != "" {
+		var ok bool
+		firstInput, ok, err = ui.Prompt("Resuming conversation")
+		if err != nil || !ok {
+			return err
+		}
+	}
+
 	run, err := client.Run(ctx, tool, gptscript.Options{
 		Confirm:       true,
 		IncludeEvents: true,
 		DisableCache:  opt.DisableCache,
-		Input:         opt.Input,
+		Input:         firstInput,
 		CacheDir:      opt.CacheDir,
 		SubTool:       opt.SubTool,
 		Workspace:     opt.Workspace,
+		ChatState:     opt.ChatState,
 	})
 	if err != nil {
 		return err
@@ -103,6 +117,16 @@ func Run(ctx context.Context, tool string, opts ...RunOptions) error {
 		if err != nil {
 			return err
 		}
+
+		if opt.SaveChatStateFile != "" {
+			if run.State() == gptscript.Finished {
+				_ = os.Remove(opt.SaveChatStateFile)
+			} else {
+				_ = os.WriteFile(opt.SaveChatStateFile, []byte(run.ChatState()), 0600)
+			}
+		}
+
+		run.ChatState()
 
 		if run.State().IsTerminal() {
 			return run.Err()
@@ -135,29 +159,35 @@ func render(input string, run *gptscript.Run) string {
 	return buf.String()
 }
 
-func printToolCall(buf *strings.Builder, toolCall string) {
+func printToolCall(out *strings.Builder, toolCall string) {
 	// The intention here is to only print the string while it's still being generated, if it's complete
 	// then there's no reason to because we are waiting on something else at that point and it's status should
 	// be displayed
 	lines := strings.Split(toolCall, "\n")
-	line := lines[len(lines)-1]
+	buf := &strings.Builder{}
 
-	data := map[string]any{}
-	name, args, _ := strings.Cut(strings.TrimPrefix(line, ToolCallHeader), " -> ")
-	if err := json.Unmarshal([]byte(args), &data); err == nil {
-		return
+	for _, line := range lines {
+		name, args, ok := strings.Cut(strings.TrimPrefix(line, ToolCallHeader), " -> ")
+		if !ok {
+			continue
+		}
+		width := pterm.GetTerminalWidth() - 33
+		if len(args) > width {
+			args = fmt.Sprintf("%s %s...(%d)", name, args[:width], len(args[width:]))
+		} else {
+			args = fmt.Sprintf("%s %s", name, args)
+		}
+
+		if buf.Len() > 0 {
+			buf.WriteString("\n")
+		}
+		buf.WriteString(strings.TrimSpace(args))
 	}
 
-	width := pterm.GetTerminalWidth() - 33
-	if len(args) > width {
-		args = fmt.Sprintf("%s %s...(%d)", name, args[:width], len(args[width:]))
-	} else {
-		args = fmt.Sprintf("%s %s", name, args)
+	if buf.Len() > 0 {
+		out.WriteString("\n")
+		out.WriteString(BoxStyle.Render("Call Arguments:\n\n" + buf.String()))
 	}
-
-	buf.WriteString("Preparing call:")
-	buf.WriteString(args)
-	buf.WriteString("\n")
 }
 
 func printCall(buf *strings.Builder, calls map[string]gptscript.CallFrame, call gptscript.CallFrame) {
@@ -201,7 +231,7 @@ func printCall(buf *strings.Builder, calls map[string]gptscript.CallFrame, call 
 func getCurrentToolName(run *gptscript.Run) string {
 	toolName := run.RespondingTool().Name
 	if toolName == "" {
-		return toolName
+		return ""
 	}
 	return "@" + toolName
 }
