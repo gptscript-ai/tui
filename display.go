@@ -90,7 +90,7 @@ func (a *display) Progress(text string) error {
 	}
 
 	now := time.Now()
-	if now.Sub(a.last).Milliseconds() > 200 {
+	if now.Sub(a.last).Milliseconds() > 50 {
 		a.last = now
 		lines := strings.Split(text, "\n")
 		height := pterm.GetTerminalHeight()

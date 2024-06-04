@@ -2,27 +2,53 @@ package tui
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"sort"
 	"strings"
 
 	"github.com/fatih/color"
 	"github.com/gptscript-ai/go-gptscript"
+	"github.com/pterm/pterm"
 	"golang.org/x/exp/maps"
 )
 
+const ToolCallHeader = "<tool call>"
+
 type RunOptions struct {
 	TrustedRepoPrefixes []string
+	DisableCache        bool
+	Input               string
+	CacheDir            string
+	SubTool             string
+	Workspace           string
+}
+
+func first[T comparable](in ...T) (result T) {
+	for _, i := range in {
+		if i != result {
+			return i
+		}
+	}
+	return
 }
 
 func complete(opts ...RunOptions) (result RunOptions) {
 	for _, opt := range opts {
 		result.TrustedRepoPrefixes = append(result.TrustedRepoPrefixes, opt.TrustedRepoPrefixes...)
+		result.DisableCache = first(opt.DisableCache, result.DisableCache)
+		result.CacheDir = first(opt.CacheDir, result.CacheDir)
+		result.SubTool = first(opt.SubTool, result.SubTool)
+		result.Workspace = first(opt.Workspace, result.Workspace)
 	}
 	return
 }
 
-func Run(ctx context.Context, tool, workspace, input string, opts ...RunOptions) error {
-	opt := complete(opts...)
+func Run(ctx context.Context, tool string, opts ...RunOptions) error {
+	var (
+		opt   = complete(opts...)
+		input = opt.Input
+	)
 
 	client, err := gptscript.NewClient()
 	if err != nil {
@@ -44,8 +70,11 @@ func Run(ctx context.Context, tool, workspace, input string, opts ...RunOptions)
 	run, err := client.Run(ctx, tool, gptscript.Options{
 		Confirm:       true,
 		IncludeEvents: true,
-		Workspace:     workspace,
-		Input:         input,
+		DisableCache:  opt.DisableCache,
+		Input:         opt.Input,
+		CacheDir:      opt.CacheDir,
+		SubTool:       opt.SubTool,
+		Workspace:     opt.Workspace,
 	})
 	if err != nil {
 		return err
@@ -53,22 +82,10 @@ func Run(ctx context.Context, tool, workspace, input string, opts ...RunOptions)
 	defer run.Close()
 
 	for {
-		var (
-			prg   gptscript.Program
-			calls = map[string]gptscript.CallFrame{}
-			text  string
-		)
+		var text string
 
 		for event := range run.Events() {
-			if event.Run != nil {
-				prg = event.Run.Program
-			}
-
-			if event.Call != nil {
-				calls[event.Call.ID] = *event.Call
-			}
-
-			text = render(input, calls)
+			text = render(input, run)
 			if err := ui.Progress(text); err != nil {
 				return err
 			}
@@ -91,7 +108,7 @@ func Run(ctx context.Context, tool, workspace, input string, opts ...RunOptions)
 			return run.Err()
 		}
 
-		line, ok, err := ui.Prompt(getCurrentToolName(prg, run))
+		line, ok, err := ui.Prompt(getCurrentToolName(run))
 		if err != nil || !ok {
 			return err
 		}
@@ -104,20 +121,43 @@ func Run(ctx context.Context, tool, workspace, input string, opts ...RunOptions)
 	}
 }
 
-func render(input string, calls map[string]gptscript.CallFrame) string {
+func render(input string, run *gptscript.Run) string {
 	buf := &strings.Builder{}
 
 	if input != "" {
 		buf.WriteString(color.GreenString("> "+input) + "\n")
 	}
 
-	for _, call := range calls {
-		if call.ParentID == "" {
-			printCall(buf, calls, call)
-		}
+	if call, ok := run.ParentCallFrame(); ok {
+		printCall(buf, run.Calls(), call)
 	}
 
 	return buf.String()
+}
+
+func printToolCall(buf *strings.Builder, toolCall string) {
+	// The intention here is to only print the string while it's still being generated, if it's complete
+	// then there's no reason to because we are waiting on something else at that point and it's status should
+	// be displayed
+	lines := strings.Split(toolCall, "\n")
+	line := lines[len(lines)-1]
+
+	data := map[string]any{}
+	name, args, _ := strings.Cut(strings.TrimPrefix(line, ToolCallHeader), " -> ")
+	if err := json.Unmarshal([]byte(args), &data); err == nil {
+		return
+	}
+
+	width := pterm.GetTerminalWidth() - 33
+	if len(args) > width {
+		args = fmt.Sprintf("%s %s...(%d)", name, args[:width], len(args[width:]))
+	} else {
+		args = fmt.Sprintf("%s %s", name, args)
+	}
+
+	buf.WriteString("Preparing call:")
+	buf.WriteString(args)
+	buf.WriteString("\n")
 }
 
 func printCall(buf *strings.Builder, calls map[string]gptscript.CallFrame, call gptscript.CallFrame) {
@@ -129,7 +169,8 @@ func printCall(buf *strings.Builder, calls map[string]gptscript.CallFrame, call 
 	}
 
 	for _, output := range call.Output {
-		if content, _, _ := strings.Cut(output.Content, "<tool call>"); content != "" {
+		content, toolCall, _ := strings.Cut(output.Content, ToolCallHeader)
+		if content != "" {
 			if strings.HasPrefix(call.Tool.Instructions, "#!") {
 				buf.WriteString(BoxStyle.Render(strings.TrimSpace(content)))
 			} else {
@@ -140,6 +181,10 @@ func printCall(buf *strings.Builder, calls map[string]gptscript.CallFrame, call 
 					buf.WriteString(content)
 				}
 			}
+		}
+
+		if toolCall != "" {
+			printToolCall(buf, ToolCallHeader+toolCall)
 		}
 
 		keys := maps.Keys(output.SubCalls)
@@ -153,10 +198,8 @@ func printCall(buf *strings.Builder, calls map[string]gptscript.CallFrame, call 
 	}
 }
 
-func getCurrentToolName(prg gptscript.Program, run *gptscript.Run) string {
-	out, _ := run.RawOutput()
-	toolID, _ := out["toolID"].(string)
-	toolName := prg.ToolSet[toolID].Name
+func getCurrentToolName(run *gptscript.Run) string {
+	toolName := run.RespondingTool().Name
 	if toolName == "" {
 		return toolName
 	}

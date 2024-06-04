@@ -66,8 +66,8 @@ func (c *Confirm) HandlePrompt(ctx context.Context, event gptscript.Frame, promp
 	}
 
 	return true, c.client.PromptResponse(ctx, gptscript.PromptResponse{
-		ID:       event.Prompt.ID,
-		Response: values,
+		ID:        event.Prompt.ID,
+		Responses: values,
 	})
 }
 
@@ -166,9 +166,9 @@ func (c *Confirm) IsTrusted(event gptscript.Frame) (string, bool, error) {
 		if _, ok := c.always[event.Call.Tool.Instructions]; ok {
 			return "", true, nil
 		}
-		return fmt.Sprintf("Proceed with %s (or always allow %s calls)\nConfirm (y/n/a)",
+		return fmt.Sprintf("Proceed with %s (or allow all %s calls)\nConfirm (y/n/a)",
 			strings.ToLower(event.Call.DisplayText[:1])+event.Call.DisplayText[1:],
-			event.Call.Tool.Instructions[2:],
+			strings.TrimPrefix(event.Call.Tool.Instructions[2:], "sys."),
 		), false, nil
 	}
 
