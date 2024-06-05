@@ -24,6 +24,7 @@ type RunOptions struct {
 	ChatState           string
 	SaveChatStateFile   string
 	Workspace           string
+	ExtraEnv            []string
 }
 
 func first[T comparable](in ...T) (result T) {
@@ -44,6 +45,7 @@ func complete(opts ...RunOptions) (result RunOptions) {
 		result.Workspace = first(opt.Workspace, result.Workspace)
 		result.SaveChatStateFile = first(opt.SaveChatStateFile, result.SaveChatStateFile)
 		result.ChatState = first(opt.ChatState, result.ChatState)
+		result.ExtraEnv = append(result.ExtraEnv, opt.ExtraEnv...)
 	}
 	return
 }
@@ -89,6 +91,7 @@ func Run(ctx context.Context, tool string, opts ...RunOptions) error {
 		SubTool:       opt.SubTool,
 		Workspace:     opt.Workspace,
 		ChatState:     opt.ChatState,
+		Env:           opt.ExtraEnv,
 	})
 	if err != nil {
 		return err
