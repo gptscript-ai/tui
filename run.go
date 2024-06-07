@@ -102,9 +102,11 @@ func Run(ctx context.Context, tool string, opts ...RunOptions) error {
 		var text string
 
 		for event := range run.Events() {
-			text = render(input, run)
-			if err := ui.Progress(text); err != nil {
-				return err
+			if event.Call != nil {
+				text = render(input, run)
+				if err := ui.Progress(text); err != nil {
+					return err
+				}
 			}
 
 			if ok, err := confirm.HandlePrompt(ctx, event, ui.Ask); !ok || err != nil {
