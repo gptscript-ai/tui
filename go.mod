@@ -8,7 +8,7 @@ require (
 	github.com/charmbracelet/lipgloss v0.11.0
 	github.com/chzyer/readline v1.5.1
 	github.com/fatih/color v1.17.0
-	github.com/gptscript-ai/go-gptscript v0.0.0-20240613210501-914e71e450e7
+	github.com/gptscript-ai/go-gptscript v0.0.0-20240613214812-8111c2b02d71
 	github.com/pterm/pterm v0.12.79
 	golang.org/x/exp v0.0.0-20240103183307-be819d1f06fc
 )
@@ -23,7 +23,7 @@ require (
 	github.com/charmbracelet/x/ansi v0.1.1 // indirect
 	github.com/containerd/console v1.0.4 // indirect
 	github.com/dlclark/regexp2 v1.4.0 // indirect
-	github.com/getkin/kin-openapi v0.123.0 // indirect
+	github.com/getkin/kin-openapi v0.124.0 // indirect
 	github.com/go-openapi/jsonpointer v0.20.2 // indirect
 	github.com/go-openapi/swag v0.22.8 // indirect
 	github.com/gookit/color v1.5.4 // indirect
