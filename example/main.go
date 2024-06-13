@@ -17,10 +17,18 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
+	var state string
+	data, err := os.ReadFile("state.json")
+	if err == nil {
+		state = string(data)
+	}
+
 	if err := tui.Run(ctx, os.Args[1], tui.RunOptions{
 		Workspace:           "./workspace",
 		TrustedRepoPrefixes: []string{"github.com/gptscript-ai/context"},
 		DisableCache:        true,
+		SaveChatStateFile:   "state.json",
+		ChatState:           state,
 	}); err != nil {
 		log.Fatal(err)
 	}

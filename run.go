@@ -2,8 +2,11 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
+	"os/signal"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -16,6 +19,11 @@ import (
 const ToolCallHeader = "<tool call>"
 
 type RunOptions struct {
+	OpenAIAPIKey  string
+	OpenAIBaseURL string
+	DefaultModel  string
+
+	AppName             string
 	TrustedRepoPrefixes []string
 	DisableCache        bool
 	Input               string
@@ -25,6 +33,8 @@ type RunOptions struct {
 	SaveChatStateFile   string
 	Workspace           string
 	ExtraEnv            []string
+
+	deleteWorkspaceOn bool
 }
 
 func first[T comparable](in ...T) (result T) {
@@ -36,7 +46,7 @@ func first[T comparable](in ...T) (result T) {
 	return
 }
 
-func complete(opts ...RunOptions) (result RunOptions) {
+func complete(opts ...RunOptions) (result RunOptions, _ error) {
 	for _, opt := range opts {
 		result.TrustedRepoPrefixes = append(result.TrustedRepoPrefixes, opt.TrustedRepoPrefixes...)
 		result.DisableCache = first(opt.DisableCache, result.DisableCache)
@@ -46,23 +56,64 @@ func complete(opts ...RunOptions) (result RunOptions) {
 		result.SaveChatStateFile = first(opt.SaveChatStateFile, result.SaveChatStateFile)
 		result.ChatState = first(opt.ChatState, result.ChatState)
 		result.ExtraEnv = append(result.ExtraEnv, opt.ExtraEnv...)
+		result.AppName = first(opt.AppName, result.AppName)
+
+		result.OpenAIAPIKey = first(opt.OpenAIAPIKey, result.OpenAIAPIKey)
+		result.OpenAIBaseURL = first(opt.OpenAIBaseURL, result.OpenAIAPIKey)
+		result.DefaultModel = first(opt.DefaultModel, result.DefaultModel)
 	}
+	if result.AppName == "" {
+		result.AppName = "gptscript-tui"
+	}
+
+	if result.Workspace == "" {
+		var err error
+		result.Workspace, err = os.MkdirTemp("", fmt.Sprintf("%s-workspace-*", result.AppName))
+		if err != nil {
+			return result, err
+		}
+		result.deleteWorkspaceOn = true
+	} else if !filepath.IsAbs(result.Workspace) {
+		var err error
+		result.Workspace, err = filepath.Abs(result.Workspace)
+		if err != nil {
+			return result, err
+		}
+	}
+
+	if err := os.MkdirAll(result.Workspace, 0700); err != nil {
+		return result, err
+	}
+
 	return
 }
 
 func Run(ctx context.Context, tool string, opts ...RunOptions) error {
 	var (
-		opt   = complete(opts...)
-		input = opt.Input
+		opt, err         = complete(opts...)
+		input            = opt.Input
+		localCtx, cancel = signal.NotifyContext(ctx, os.Interrupt)
 	)
+	defer cancel()
 
-	client, err := gptscript.NewGPTScript()
+	if err != nil {
+		return err
+	}
+	if opt.deleteWorkspaceOn {
+		defer os.RemoveAll(opt.Workspace)
+	}
+
+	client, err := gptscript.NewGPTScript(gptscript.GlobalOptions{
+		OpenAIAPIKey:  opt.OpenAIAPIKey,
+		OpenAIBaseURL: opt.OpenAIBaseURL,
+		DefaultModel:  opt.DefaultModel,
+	})
 	if err != nil {
 		return err
 	}
 	defer client.Close()
 
-	confirm, err := NewConfirm(tool, client, opt.TrustedRepoPrefixes...)
+	confirm, err := NewConfirm(opt.AppName, client, opt.TrustedRepoPrefixes...)
 	if err != nil {
 		return err
 	}
@@ -82,7 +133,10 @@ func Run(ctx context.Context, tool string, opts ...RunOptions) error {
 		}
 	}
 
-	run, err := client.Run(ctx, tool, gptscript.Options{
+	run, err := client.Run(localCtx, tool, gptscript.Options{
+		GlobalOptions: gptscript.GlobalOptions{
+			Env: opt.ExtraEnv,
+		},
 		Confirm:       true,
 		IncludeEvents: true,
 		DisableCache:  opt.DisableCache,
@@ -91,7 +145,6 @@ func Run(ctx context.Context, tool string, opts ...RunOptions) error {
 		SubTool:       opt.SubTool,
 		Workspace:     opt.Workspace,
 		ChatState:     opt.ChatState,
-		Env:           opt.ExtraEnv,
 	})
 	if err != nil {
 		return err
@@ -109,13 +162,21 @@ func Run(ctx context.Context, tool string, opts ...RunOptions) error {
 				}
 			}
 
-			if ok, err := confirm.HandlePrompt(ctx, event, ui.Ask); !ok || err != nil {
+			if ok, err := confirm.HandlePrompt(localCtx, event, ui.Ask); !ok {
+				return nil
+			} else if err != nil && localCtx.Err() == nil {
 				return err
 			}
 
-			if ok, err := confirm.HandleConfirm(ctx, event, ui.AskYesNo); !ok || err != nil {
+			if ok, err := confirm.HandleConfirm(localCtx, event, ui.AskYesNo); !ok {
+				return nil
+			} else if err != nil && localCtx.Err() == nil {
 				return err
 			}
+		}
+
+		if errors.Is(context.Canceled, localCtx.Err()) {
+			text = "Interrupted\n\n"
 		}
 
 		err = ui.Finished(text)
@@ -134,7 +195,12 @@ func Run(ctx context.Context, tool string, opts ...RunOptions) error {
 		run.ChatState()
 
 		if run.State().IsTerminal() {
-			return run.Err()
+			if run.State() == gptscript.Error && localCtx.Err() != nil {
+				cancel()
+				localCtx, cancel = signal.NotifyContext(ctx, os.Interrupt)
+			} else {
+				return run.Err()
+			}
 		}
 
 		line, ok, err := ui.Prompt(getCurrentToolName(run))
@@ -143,7 +209,7 @@ func Run(ctx context.Context, tool string, opts ...RunOptions) error {
 		}
 
 		input = line
-		run, err = run.NextChat(ctx, input)
+		run, err = run.NextChat(localCtx, input)
 		if err != nil {
 			return err
 		}

@@ -20,8 +20,8 @@ type Confirm struct {
 	trustedPrefixes []string
 }
 
-func NewConfirm(tool string, client gptscript.GPTScript, trustedRepoPrefixes ...string) (*Confirm, error) {
-	authFile, err := xdg.CacheFile(fmt.Sprintf("gptscript/tui/chat-%s-auth.json", id(tool)))
+func NewConfirm(appName string, client gptscript.GPTScript, trustedRepoPrefixes ...string) (*Confirm, error) {
+	authFile, err := xdg.CacheFile(fmt.Sprintf("%s/authorized.json", appName))
 	if err != nil {
 		return nil, err
 	}

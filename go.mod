@@ -8,7 +8,7 @@ require (
 	github.com/charmbracelet/lipgloss v0.11.0
 	github.com/chzyer/readline v1.5.1
 	github.com/fatih/color v1.17.0
-	github.com/gptscript-ai/go-gptscript v0.0.0-20240604231423-7a845df843b1
+	github.com/gptscript-ai/go-gptscript v0.0.0-20240613210501-914e71e450e7
 	github.com/pterm/pterm v0.12.79
 	golang.org/x/exp v0.0.0-20240103183307-be819d1f06fc
 )

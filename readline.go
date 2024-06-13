@@ -43,8 +43,6 @@ func newReadlinePrompter(tool string) (*prompter, error) {
 		return nil, err
 	}
 
-	l.CaptureExitSignal()
-
 	return &prompter{
 		readliner: l,
 	}, nil
