@@ -59,7 +59,7 @@ func complete(opts ...RunOptions) (result RunOptions, _ error) {
 		result.AppName = first(opt.AppName, result.AppName)
 
 		result.OpenAIAPIKey = first(opt.OpenAIAPIKey, result.OpenAIAPIKey)
-		result.OpenAIBaseURL = first(opt.OpenAIBaseURL, result.OpenAIAPIKey)
+		result.OpenAIBaseURL = first(opt.OpenAIBaseURL, result.OpenAIBaseURL)
 		result.DefaultModel = first(opt.DefaultModel, result.DefaultModel)
 	}
 	if result.AppName == "" {
