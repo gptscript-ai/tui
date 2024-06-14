@@ -55,6 +55,9 @@ func (c *Confirm) HandlePrompt(ctx context.Context, event gptscript.Frame, promp
 	for i, field := range event.Prompt.Fields {
 		msg := field
 		if i == 0 {
+			if len(event.Prompt.Fields) == 1 {
+				msg = ""
+			}
 			msg = event.Prompt.Message + "\n" + msg
 		}
 

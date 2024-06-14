@@ -32,7 +32,7 @@ type RunOptions struct {
 	ChatState           string
 	SaveChatStateFile   string
 	Workspace           string
-	ExtraEnv            []string
+	Env                 []string
 
 	deleteWorkspaceOn bool
 }
@@ -55,7 +55,7 @@ func complete(opts ...RunOptions) (result RunOptions, _ error) {
 		result.Workspace = first(opt.Workspace, result.Workspace)
 		result.SaveChatStateFile = first(opt.SaveChatStateFile, result.SaveChatStateFile)
 		result.ChatState = first(opt.ChatState, result.ChatState)
-		result.ExtraEnv = append(result.ExtraEnv, opt.ExtraEnv...)
+		result.Env = append(result.Env, opt.Env...)
 		result.AppName = first(opt.AppName, result.AppName)
 
 		result.OpenAIAPIKey = first(opt.OpenAIAPIKey, result.OpenAIAPIKey)
@@ -107,6 +107,7 @@ func Run(ctx context.Context, tool string, opts ...RunOptions) error {
 		OpenAIAPIKey:  opt.OpenAIAPIKey,
 		OpenAIBaseURL: opt.OpenAIBaseURL,
 		DefaultModel:  opt.DefaultModel,
+		Env:           opt.Env,
 	})
 	if err != nil {
 		return err
@@ -134,10 +135,8 @@ func Run(ctx context.Context, tool string, opts ...RunOptions) error {
 	}
 
 	run, err := client.Run(localCtx, tool, gptscript.Options{
-		GlobalOptions: gptscript.GlobalOptions{
-			Env: opt.ExtraEnv,
-		},
 		Confirm:       true,
+		Prompt:        true,
 		IncludeEvents: true,
 		DisableCache:  opt.DisableCache,
 		Input:         firstInput,
