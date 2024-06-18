@@ -25,16 +25,17 @@ type RunOptions struct {
 	OpenAIBaseURL string
 	DefaultModel  string
 
-	AppName             string
-	TrustedRepoPrefixes []string
-	DisableCache        bool
-	Input               string
-	CacheDir            string
-	SubTool             string
-	ChatState           string
-	SaveChatStateFile   string
-	Workspace           string
-	Env                 []string
+	AppName               string
+	TrustedRepoPrefixes   []string
+	DisableCache          bool
+	Input                 string
+	CacheDir              string
+	SubTool               string
+	ChatState             string
+	SaveChatStateFile     string
+	Workspace             string
+	UserStartConversation *bool
+	Env                   []string
 
 	deleteWorkspaceOn bool
 }
@@ -59,6 +60,7 @@ func complete(opts ...RunOptions) (result RunOptions, _ error) {
 		result.ChatState = first(opt.ChatState, result.ChatState)
 		result.Env = append(result.Env, opt.Env...)
 		result.AppName = first(opt.AppName, result.AppName)
+		result.UserStartConversation = first(opt.UserStartConversation, result.UserStartConversation)
 
 		result.OpenAIAPIKey = first(opt.OpenAIAPIKey, result.OpenAIAPIKey)
 		result.OpenAIBaseURL = first(opt.OpenAIBaseURL, result.OpenAIBaseURL)
@@ -127,7 +129,31 @@ func Run(ctx context.Context, tool string, opts ...RunOptions) error {
 	}
 	defer ui.Close()
 
+	if opt.UserStartConversation == nil {
+		nodes, err := client.Parse(ctx, tool)
+		if err != nil {
+			return err
+		}
+		for _, node := range nodes {
+			if node.ToolNode != nil {
+				if node.ToolNode.Tool.Chat && node.ToolNode.Tool.Instructions == "" {
+					opt.UserStartConversation = &[]bool{true}[0]
+				}
+				break
+			}
+		}
+	}
+
 	firstInput := opt.Input
+
+	if firstInput == "" && opt.UserStartConversation != nil && *opt.UserStartConversation {
+		var ok bool
+		firstInput, ok, err = ui.Prompt("")
+		if err != nil || !ok {
+			return err
+		}
+	}
+
 	if firstInput == "" && opt.ChatState != "" {
 		var ok bool
 		firstInput, ok, err = ui.Prompt("Resuming conversation")
