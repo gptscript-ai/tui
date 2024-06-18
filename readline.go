@@ -63,13 +63,19 @@ func (r *prompter) ReadPassword() (string, bool, error) {
 }
 
 func (r *prompter) Readline() (string, bool, error) {
-	line, err := r.readliner.Readline()
-	if errors.Is(err, readline.ErrInterrupt) {
-		return "", false, nil
-	} else if errors.Is(err, io.EOF) {
-		return "", false, nil
+	for {
+		line, err := r.readliner.Readline()
+		if errors.Is(err, readline.ErrInterrupt) {
+			return "", false, nil
+		} else if errors.Is(err, io.EOF) {
+			return "", false, nil
+		}
+		result := strings.TrimSpace(line)
+		if result == "" {
+			continue
+		}
+		return result, true, nil
 	}
-	return strings.TrimSpace(line), true, nil
 }
 
 func (r *prompter) SetPrompt(text string) {
