@@ -7,8 +7,10 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/fatih/color"
 	"github.com/gptscript-ai/go-gptscript"
@@ -223,7 +225,7 @@ func render(input string, run *gptscript.Run) string {
 	}
 
 	if call, ok := run.ParentCallFrame(); ok {
-		printCall(buf, run.Calls(), call)
+		printCall(buf, run.Calls(), call, nil)
 	}
 
 	return buf.String()
@@ -260,11 +262,29 @@ func printToolCall(out *strings.Builder, toolCall string) {
 	}
 }
 
-func printCall(buf *strings.Builder, calls map[string]gptscript.CallFrame, call gptscript.CallFrame) {
+func printCall(buf *strings.Builder, calls map[string]gptscript.CallFrame, call gptscript.CallFrame, stack []string) {
+	if slices.Contains(stack, call.ID) {
+		return
+	}
+
 	if call.DisplayText != "" {
 		s, err := MarkdownRender.Render(call.DisplayText)
 		if err == nil {
 			buf.WriteString(s)
+		}
+	}
+
+	// Here we try to print the status of credential/context tools that are taking a while to do things.
+	if len(call.Output) == 0 {
+		for _, child := range calls {
+			if child.ID == call.ID {
+				continue
+			}
+			if child.ParentID == call.ID {
+				if len(child.Output) > 0 && child.End.IsZero() && time.Since(child.Start) > time.Second {
+					printCall(buf, calls, child, append(stack, call.ID))
+				}
+			}
 		}
 	}
 
@@ -293,7 +313,7 @@ func printCall(buf *strings.Builder, calls map[string]gptscript.CallFrame, call 
 		})
 
 		for _, key := range keys {
-			printCall(buf, calls, calls[key])
+			printCall(buf, calls, calls[key], append(stack, call.ID))
 		}
 	}
 }
