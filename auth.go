@@ -17,7 +17,7 @@ import (
 
 type Confirm struct {
 	trustedMap      map[string]struct{}
-	always          map[string]struct{}
+	always          []Trusted
 	client          gptscript.GPTScript
 	authFile        string
 	trustedPrefixes []string
@@ -32,7 +32,6 @@ func NewConfirm(appName string, client gptscript.GPTScript, trustedRepoPrefixes 
 	c := &Confirm{
 		trustedMap:      map[string]struct{}{},
 		trustedPrefixes: trustedRepoPrefixes,
-		always:          map[string]struct{}{},
 		client:          client,
 		authFile:        authFile,
 	}
@@ -82,7 +81,7 @@ func (c *Confirm) HandleConfirm(ctx context.Context, event gptscript.Frame, prom
 		return true, nil
 	}
 
-	msg, trusted, err := c.IsTrusted(event)
+	prompt, trusted, err := c.IsTrusted(event)
 	if err != nil {
 		return true, err
 	}
@@ -94,7 +93,7 @@ func (c *Confirm) HandleConfirm(ctx context.Context, event gptscript.Frame, prom
 	)
 
 	if !trusted {
-		answer, ok, err = prompter(msg)
+		answer, ok, err = prompter(prompt.Message)
 		if !ok || err != nil {
 			return ok, err
 		}
@@ -102,7 +101,7 @@ func (c *Confirm) HandleConfirm(ctx context.Context, event gptscript.Frame, prom
 			reason = "User rejected action, abort operation and ask how to proceed"
 		} else {
 			trusted = true
-			c.SetTrusted(event, answer)
+			c.SetTrusted(prompt, answer)
 		}
 	}
 
@@ -113,12 +112,12 @@ func (c *Confirm) HandleConfirm(ctx context.Context, event gptscript.Frame, prom
 	})
 }
 
-func (c *Confirm) SetTrusted(event gptscript.Frame, answer Answer) {
+func (c *Confirm) SetTrusted(prompt ConfirmPrompt, answer Answer) {
 	if answer == No {
 		return
 	}
 
-	repo := c.getRepo(event)
+	repo := prompt.Repo
 	if _, ok := c.trustedMap[repo]; repo != "" && !ok {
 		c.trustedMap[repo] = struct{}{}
 		data, err := json.Marshal(c.trustedMap)
@@ -128,8 +127,8 @@ func (c *Confirm) SetTrusted(event gptscript.Frame, answer Answer) {
 		_ = os.WriteFile(c.authFile, data, 0600)
 	}
 
-	if answer == Always && strings.HasPrefix(event.Call.Tool.Instructions, "#!sys.") {
-		c.always[event.Call.Tool.Instructions] = struct{}{}
+	if answer == Always && prompt.AlwaysTrust.ToolName != "" {
+		c.always = append(c.always, prompt.AlwaysTrust)
 	}
 }
 
@@ -152,30 +151,59 @@ func (c *Confirm) getRepo(event gptscript.Frame) string {
 	return ""
 }
 
-func (c *Confirm) IsTrusted(event gptscript.Frame) (string, bool, error) {
+func (c *Confirm) isAlways(event gptscript.Frame) bool {
+	sysToolName, isSysTool := isSysTool(event, "")
+	if !isSysTool {
+		return false
+	}
+
+	for _, trusted := range c.always {
+		if trusted.ToolName == sysToolName {
+			if len(c.trustedPrefixes) == 0 {
+				return true
+			}
+			args := inputArgs(event)
+			for name, prefix := range trusted.ArgPrefix {
+				val, _ := args[name].(string)
+				if !strings.HasPrefix(val, prefix) {
+					return false
+				}
+			}
+			return true
+		}
+	}
+
+	return false
+}
+
+func (c *Confirm) IsTrusted(event gptscript.Frame) (ConfirmPrompt, bool, error) {
 	repo := c.getRepo(event)
 	if _, ok := c.trustedMap[repo]; repo != "" && ok {
-		return "", true, nil
+		return ConfirmPrompt{}, true, nil
 	}
 
 	for _, prefix := range c.trustedPrefixes {
 		if repo == prefix || strings.HasPrefix(repo, prefix+"/") {
-			return "", true, nil
+			return ConfirmPrompt{}, true, nil
 		}
 	}
 
 	if repo != "" {
-		return fmt.Sprintf("Do you trust tools from the git repository [%s] (y/n)", repo), false, nil
+		return ConfirmPrompt{
+			Message: fmt.Sprintf("Do you trust tools from the git repository [%s] (y/n)", repo),
+			Repo:    repo,
+		}, false, nil
 	}
 
-	if _, isSysTool := isSysTool(event, ""); isSysTool && event.Call.DisplayText != "" {
-		if _, ok := c.always[event.Call.Tool.Instructions]; ok {
-			return "", true, nil
-		}
-		return toConfirmMessage(event), false, nil
+	if c.isAlways(event) {
+		return ConfirmPrompt{}, true, nil
 	}
 
-	return "", true, nil
+	if sysToolName, isSysTool := isSysTool(event, ""); isSysTool {
+		return toSysConfirmMessage(sysToolName, event), false, nil
+	}
+
+	return ConfirmPrompt{}, true, nil
 }
 
 func isSysTool(event gptscript.Frame, sysName string) (string, bool) {
@@ -189,24 +217,101 @@ func inputArgs(event gptscript.Frame) map[string]any {
 	return data
 }
 
-func toConfirmMessage(event gptscript.Frame) string {
-	if tool, ok := isSysTool(event, "write"); ok {
-		data := inputArgs(event)
-		filename, _ := data["filename"].(string)
-		content, _ := data["content"].(string)
-		if filename != "" && content != "" {
-			existing, err := os.ReadFile(filename)
-			if errors.Is(err, fs.ErrNotExist) {
-				return fmt.Sprintf("%s\nWrite to %s (or allow all %s calls)\nConfirm (y/n/a)",
-					markdownBox("", content), filename, tool)
-			} else if err == nil {
-				patch := godiffpatch.GeneratePatch(filepath.Base(filename), string(existing), content)
-				return fmt.Sprintf("%s\nUpdate %s (or allow all %s calls)\nConfirm (y/n/a)",
-					markdownBox("diff", patch), filename, tool)
-			}
-		}
+type ConfirmPrompt struct {
+	Repo        string
+	Message     string
+	AlwaysTrust Trusted
+}
+
+type Trusted struct {
+	ToolName  string
+	ArgPrefix map[string]string
+}
+
+func toSysConfirmMessage(toolName string, event gptscript.Frame) (prompt ConfirmPrompt) {
+	var ok bool
+
+	switch toolName {
+	case "write":
+		prompt, ok = toWritePrompt(event)
+	case "exec":
+		prompt, ok = toExecPrompt(event)
 	}
-	return fmt.Sprintf("Proceed with %s (or allow all %s calls)\nConfirm (y/n/a)",
-		strings.ToLower(event.Call.DisplayText[:1])+event.Call.DisplayText[1:],
-		strings.TrimPrefix(event.Call.Tool.Instructions[2:], "sys."))
+	if ok {
+		return
+	}
+
+	text := toolName
+	if event.Call.DisplayText != "" {
+		text = strings.ToLower(event.Call.DisplayText[:1]) + event.Call.DisplayText[1:]
+	}
+
+	return ConfirmPrompt{
+		Message: fmt.Sprintf("Proceed with %s (or allow all %s calls)\nConfirm (y/n/a)", text, toolName),
+		AlwaysTrust: Trusted{
+			ToolName: toolName,
+		},
+	}
+}
+
+func toExecPrompt(event gptscript.Frame) (ConfirmPrompt, bool) {
+	data := inputArgs(event)
+	command, _ := data["command"].(string)
+	directory, _ := data["directory"].(string)
+	if command == "" {
+		return ConfirmPrompt{}, false
+	}
+	msg := &strings.Builder{}
+	msg.WriteString("Run \"")
+	msg.WriteString(command)
+	msg.WriteString("\"")
+	if directory != "" {
+		msg.WriteString(" in directory ")
+		msg.WriteString(directory)
+	}
+
+	parts := strings.Fields(command)
+	prefix := parts[0]
+	if len(parts) > 1 && !strings.HasPrefix(parts[1], "-") && !strings.Contains(parts[1], ".") {
+		prefix += " " + parts[1]
+	}
+
+	msg.WriteString(" (or allow all \"")
+	msg.WriteString(prefix)
+	msg.WriteString(" ...\" commands)\nConfirm (y/n/a)")
+
+	return ConfirmPrompt{
+		Message: msg.String(),
+		AlwaysTrust: Trusted{
+			ToolName: "exec",
+			ArgPrefix: map[string]string{
+				"command": prefix,
+			},
+		},
+	}, true
+}
+
+func toWritePrompt(event gptscript.Frame) (ConfirmPrompt, bool) {
+	data := inputArgs(event)
+	filename, _ := data["filename"].(string)
+	content, _ := data["content"].(string)
+	if filename == "" || content == "" {
+		return ConfirmPrompt{}, false
+	}
+
+	existing, err := os.ReadFile(filename)
+	if errors.Is(err, fs.ErrNotExist) {
+		return ConfirmPrompt{
+			Message: fmt.Sprintf("%s\nWrite to %s \nConfirm (y/n)",
+				markdownBox("", content), filename),
+		}, true
+	} else if err == nil {
+		patch := godiffpatch.GeneratePatch(filepath.Base(filename), string(existing), content)
+		return ConfirmPrompt{
+			Message: fmt.Sprintf("%s\nUpdate %s\nConfirm (y/n)",
+				markdownBox("diff", patch), filename),
+		}, true
+	}
+
+	return ConfirmPrompt{}, false
 }
