@@ -5,11 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/adrg/xdg"
 	"github.com/gptscript-ai/go-gptscript"
+	godiffpatch "github.com/sourcegraph/go-diff-patch"
 )
 
 type Confirm struct {
@@ -96,7 +99,7 @@ func (c *Confirm) HandleConfirm(ctx context.Context, event gptscript.Frame, prom
 			return ok, err
 		}
 		if answer == No {
-			reason = "User rejected action"
+			reason = "User rejected action, abort operation and ask how to proceed"
 		} else {
 			trusted = true
 			c.SetTrusted(event, answer)
@@ -165,15 +168,45 @@ func (c *Confirm) IsTrusted(event gptscript.Frame) (string, bool, error) {
 		return fmt.Sprintf("Do you trust tools from the git repository [%s] (y/n)", repo), false, nil
 	}
 
-	if strings.HasPrefix(event.Call.Tool.Instructions, "#!sys.") && event.Call.DisplayText != "" {
+	if _, isSysTool := isSysTool(event, ""); isSysTool && event.Call.DisplayText != "" {
 		if _, ok := c.always[event.Call.Tool.Instructions]; ok {
 			return "", true, nil
 		}
-		return fmt.Sprintf("Proceed with %s (or allow all %s calls)\nConfirm (y/n/a)",
-			strings.ToLower(event.Call.DisplayText[:1])+event.Call.DisplayText[1:],
-			strings.TrimPrefix(event.Call.Tool.Instructions[2:], "sys."),
-		), false, nil
+		return toConfirmMessage(event), false, nil
 	}
 
 	return "", true, nil
+}
+
+func isSysTool(event gptscript.Frame, sysName string) (string, bool) {
+	return strings.TrimPrefix(event.Call.Tool.Instructions[2:], "sys."),
+		strings.HasPrefix(event.Call.Tool.Instructions, "#!sys."+sysName)
+}
+
+func inputArgs(event gptscript.Frame) map[string]any {
+	data := map[string]any{}
+	_ = json.Unmarshal([]byte(event.Call.Input), &data)
+	return data
+}
+
+func toConfirmMessage(event gptscript.Frame) string {
+	if tool, ok := isSysTool(event, "write"); ok {
+		data := inputArgs(event)
+		filename, _ := data["filename"].(string)
+		content, _ := data["content"].(string)
+		if filename != "" && content != "" {
+			existing, err := os.ReadFile(filename)
+			if errors.Is(err, fs.ErrNotExist) {
+				return fmt.Sprintf("%s\nWrite to %s (or allow all %s calls)\nConfirm (y/n/a)",
+					markdownBox("", content), filename, tool)
+			} else if err == nil {
+				patch := godiffpatch.GeneratePatch(filepath.Base(filename), string(existing), content)
+				return fmt.Sprintf("%s\nUpdate %s (or allow all %s calls)\nConfirm (y/n/a)",
+					markdownBox("diff", patch), filename, tool)
+			}
+		}
+	}
+	return fmt.Sprintf("Proceed with %s (or allow all %s calls)\nConfirm (y/n/a)",
+		strings.ToLower(event.Call.DisplayText[:1])+event.Call.DisplayText[1:],
+		strings.TrimPrefix(event.Call.Tool.Instructions[2:], "sys."))
 }

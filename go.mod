@@ -10,6 +10,7 @@ require (
 	github.com/fatih/color v1.17.0
 	github.com/gptscript-ai/go-gptscript v0.0.0-20240625134437-4b83849794cc
 	github.com/pterm/pterm v0.12.79
+	github.com/sourcegraph/go-diff-patch v0.0.0-20240223163233-798fd1e94a8e
 	golang.org/x/exp v0.0.0-20240103183307-be819d1f06fc
 )
 

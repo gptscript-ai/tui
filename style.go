@@ -17,6 +17,14 @@ var (
 			MaxWidth(pterm.GetTerminalWidth() - 4)
 )
 
+func markdownBox(contentType, content string) string {
+	output, err := MarkdownRender.Render("```" + contentType + "\n" + content + "\n```")
+	if err == nil {
+		content = output
+	}
+	return BoxStyle.Render(content)
+}
+
 func init() {
 	r, err := glamour.NewTermRenderer(
 		glamour.WithWordWrap(pterm.GetTerminalWidth()-10),

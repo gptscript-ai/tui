@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"runtime"
 	"strings"
 	"time"
 
@@ -12,7 +11,7 @@ type display struct {
 	area         *pterm.AreaPrinter
 	prompter     *prompter
 	last         time.Time
-	lastDuration int64
+	lastDuration time.Duration
 	stopped      bool
 }
 
@@ -89,21 +88,26 @@ func (a *display) Progress(text string) error {
 		a.area = area
 		a.stopped = false
 		a.last = time.Time{}
-		a.lastDuration = 0
+		a.lastDuration = 200 * time.Millisecond
 	}
 
-	now := time.Now()
-	if now.Sub(a.last).Milliseconds() > a.lastDuration+50 {
+	start := time.Now()
+	if start.Sub(a.last) > a.lastDuration {
 		lines := strings.Split(text, "\n")
 		height := pterm.GetTerminalHeight()
 		if len(lines) > height {
 			lines = lines[len(lines)-height:]
 		}
-		a.area.Update(strings.Join(lines, "\n"))
-		if !a.last.IsZero() && runtime.GOOS == "windows" {
-			a.lastDuration = time.Now().Sub(a.last).Milliseconds()
+		newText := strings.Join(lines, "\n")
+		if a.area.GetContent() != newText {
+			a.area.Update(newText)
 		}
-		a.last = now
+		done := time.Now()
+		delta := done.Sub(start)
+		if delta > a.lastDuration {
+			a.lastDuration = delta
+		}
+		a.last = start
 	}
 
 	return nil

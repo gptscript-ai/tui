@@ -307,7 +307,7 @@ func printCall(buf *strings.Builder, calls map[string]gptscript.CallFrame, call 
 				continue
 			}
 			if child.ParentID == call.ID {
-				if len(child.Output) > 0 && child.End.IsZero() && time.Since(child.Start) > time.Second {
+				if len(child.Output) > 0 && child.End.IsZero() && time.Since(child.Start) > 2500*time.Millisecond {
 					printCall(buf, calls, child, append(stack, call.ID))
 				}
 			}
