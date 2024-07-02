@@ -28,6 +28,7 @@ type RunOptions struct {
 	AppName               string
 	TrustedRepoPrefixes   []string
 	DisableCache          bool
+	CredentialOverrides   []string
 	Input                 string
 	CacheDir              string
 	SubTool               string
@@ -53,6 +54,7 @@ func complete(opts ...RunOptions) (result RunOptions, _ error) {
 	for _, opt := range opts {
 		result.TrustedRepoPrefixes = append(result.TrustedRepoPrefixes, opt.TrustedRepoPrefixes...)
 		result.DisableCache = first(opt.DisableCache, result.DisableCache)
+		result.CredentialOverrides = append(result.CredentialOverrides, opt.CredentialOverrides...)
 		result.CacheDir = first(opt.CacheDir, result.CacheDir)
 		result.SubTool = first(opt.SubTool, result.SubTool)
 		result.Workspace = first(opt.Workspace, result.Workspace)
@@ -163,15 +165,16 @@ func Run(ctx context.Context, tool string, opts ...RunOptions) error {
 	}
 
 	run, err := client.Run(localCtx, tool, gptscript.Options{
-		Confirm:       true,
-		Prompt:        true,
-		IncludeEvents: true,
-		DisableCache:  opt.DisableCache,
-		Input:         firstInput,
-		CacheDir:      opt.CacheDir,
-		SubTool:       opt.SubTool,
-		Workspace:     opt.Workspace,
-		ChatState:     opt.ChatState,
+		Confirm:             true,
+		Prompt:              true,
+		IncludeEvents:       true,
+		DisableCache:        opt.DisableCache,
+		CredentialOverrides: opt.CredentialOverrides,
+		Input:               firstInput,
+		CacheDir:            opt.CacheDir,
+		SubTool:             opt.SubTool,
+		Workspace:           opt.Workspace,
+		ChatState:           opt.ChatState,
 	})
 	if err != nil {
 		return err
