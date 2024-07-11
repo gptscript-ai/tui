@@ -118,6 +118,9 @@ func (a *display) Close() error {
 }
 
 func (a *display) Finished(text string) error {
+	if !strings.HasSuffix(text, "\n") {
+		text += "\n"
+	}
 	a.stopped = true
 	a.area.Update(text)
 	return a.area.Stop()

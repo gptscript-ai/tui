@@ -26,6 +26,7 @@ type RunOptions struct {
 	DefaultModel  string
 
 	AppName               string
+	Eval                  []gptscript.ToolDef
 	TrustedRepoPrefixes   []string
 	DisableCache          bool
 	CredentialOverrides   []string
@@ -61,6 +62,7 @@ func complete(opts ...RunOptions) (result RunOptions, _ error) {
 		result.SaveChatStateFile = first(opt.SaveChatStateFile, result.SaveChatStateFile)
 		result.ChatState = first(opt.ChatState, result.ChatState)
 		result.Env = append(result.Env, opt.Env...)
+		result.Eval = append(result.Eval, opt.Eval...)
 		result.AppName = first(opt.AppName, result.AppName)
 		result.UserStartConversation = first(opt.UserStartConversation, result.UserStartConversation)
 
@@ -132,16 +134,21 @@ func Run(ctx context.Context, tool string, opts ...RunOptions) error {
 	defer ui.Close()
 
 	if opt.UserStartConversation == nil {
-		nodes, err := client.Parse(ctx, tool)
-		if err != nil {
-			return err
-		}
-		for _, node := range nodes {
-			if node.ToolNode != nil {
-				if node.ToolNode.Tool.Chat && node.ToolNode.Tool.Instructions == "" {
-					opt.UserStartConversation = &[]bool{true}[0]
+		tools := opt.Eval
+		if len(tools) == 0 {
+			nodes, err := client.Parse(ctx, tool)
+			if err != nil {
+				return err
+			}
+			for _, node := range nodes {
+				if node.ToolNode != nil {
+					tools = append(tools, node.ToolNode.Tool.ToolDef)
 				}
-				break
+			}
+		}
+		if len(tools) > 0 {
+			if tools[0].Chat && tools[0].Instructions == "" {
+				opt.UserStartConversation = &[]bool{true}[0]
 			}
 		}
 	}
@@ -164,7 +171,8 @@ func Run(ctx context.Context, tool string, opts ...RunOptions) error {
 		}
 	}
 
-	run, err := client.Run(localCtx, tool, gptscript.Options{
+	var run *gptscript.Run
+	runOpt := gptscript.Options{
 		Confirm:             true,
 		Prompt:              true,
 		IncludeEvents:       true,
@@ -175,11 +183,20 @@ func Run(ctx context.Context, tool string, opts ...RunOptions) error {
 		SubTool:             opt.SubTool,
 		Workspace:           opt.Workspace,
 		ChatState:           opt.ChatState,
-	})
-	if err != nil {
-		return err
 	}
-	defer run.Close()
+	if len(opt.Eval) == 0 {
+		run, err = client.Run(localCtx, tool, runOpt)
+		if err != nil {
+			return err
+		}
+		defer run.Close()
+	} else {
+		run, err = client.Evaluate(localCtx, runOpt, opt.Eval...)
+		if err != nil {
+			return err
+		}
+		defer run.Close()
+	}
 
 	for {
 		var text string

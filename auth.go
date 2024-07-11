@@ -98,7 +98,7 @@ func (c *Confirm) HandleConfirm(ctx context.Context, event gptscript.Frame, prom
 			return ok, err
 		}
 		if answer == No {
-			reason = "User rejected action, abort operation and ask how to proceed"
+			reason = "User rejected action, abort the current operation and ask the user how to proceed"
 		} else {
 			trusted = true
 			c.SetTrusted(prompt, answer)
