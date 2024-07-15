@@ -2,8 +2,10 @@ package tui
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -38,6 +40,8 @@ type RunOptions struct {
 	Workspace             string
 	UserStartConversation *bool
 	Env                   []string
+	Location              string
+	EventLog              string
 
 	deleteWorkspaceOn bool
 }
@@ -65,6 +69,8 @@ func complete(opts ...RunOptions) (result RunOptions, _ error) {
 		result.Eval = append(result.Eval, opt.Eval...)
 		result.AppName = first(opt.AppName, result.AppName)
 		result.UserStartConversation = first(opt.UserStartConversation, result.UserStartConversation)
+		result.Location = first(opt.Location, result.Location)
+		result.EventLog = first(opt.EventLog, result.EventLog)
 
 		result.OpenAIAPIKey = first(opt.OpenAIAPIKey, result.OpenAIAPIKey)
 		result.OpenAIBaseURL = first(opt.OpenAIBaseURL, result.OpenAIBaseURL)
@@ -101,6 +107,7 @@ func Run(ctx context.Context, tool string, opts ...RunOptions) error {
 		opt, err         = complete(opts...)
 		input            = opt.Input
 		localCtx, cancel = signal.NotifyContext(ctx, os.Interrupt)
+		eventOut         io.Writer
 	)
 	defer cancel()
 
@@ -183,6 +190,7 @@ func Run(ctx context.Context, tool string, opts ...RunOptions) error {
 		SubTool:             opt.SubTool,
 		Workspace:           opt.Workspace,
 		ChatState:           opt.ChatState,
+		Location:            opt.Location,
 	}
 	if len(opt.Eval) == 0 {
 		run, err = client.Run(localCtx, tool, runOpt)
@@ -198,11 +206,28 @@ func Run(ctx context.Context, tool string, opts ...RunOptions) error {
 		defer run.Close()
 	}
 
+	if opt.EventLog != "" {
+		f, err := os.OpenFile(opt.EventLog, os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		eventOut = f
+	}
+
 	for {
 		var text string
 
 		for event := range run.Events() {
-			if event.Call != nil {
+			if event.Call == nil || event.Call.Type != gptscript.EventTypeCallProgress {
+				if eventOut != nil {
+					if err := json.NewEncoder(eventOut).Encode(map[string]any{
+						"time":  time.Now(),
+						"event": event,
+					}); err != nil {
+						return err
+					}
+				}
 				text = render(input, run)
 				if err := ui.Progress(text); err != nil {
 					return err
