@@ -219,15 +219,16 @@ func Run(ctx context.Context, tool string, opts ...RunOptions) error {
 		var text string
 
 		for event := range run.Events() {
-			if event.Call == nil || event.Call.Type != gptscript.EventTypeCallProgress {
-				if eventOut != nil {
-					if err := json.NewEncoder(eventOut).Encode(map[string]any{
-						"time":  time.Now(),
-						"event": event,
-					}); err != nil {
-						return err
-					}
+			if eventOut != nil && (event.Call == nil || event.Call.Type != gptscript.EventTypeCallProgress) {
+				if err := json.NewEncoder(eventOut).Encode(map[string]any{
+					"time":  time.Now(),
+					"event": event,
+				}); err != nil {
+					return err
 				}
+			}
+
+			if event.Call != nil {
 				text = render(input, run)
 				if err := ui.Progress(text); err != nil {
 					return err
