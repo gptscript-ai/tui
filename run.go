@@ -252,10 +252,7 @@ func Run(ctx context.Context, tool string, opts ...RunOptions) error {
 			text = "Interrupted\n\n"
 		}
 
-		err = ui.Finished(text)
-		if err != nil {
-			return err
-		}
+		ui.Finished(text)
 
 		if opt.SaveChatStateFile != "" {
 			if run.State() == gptscript.Finished {

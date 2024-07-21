@@ -1,14 +1,20 @@
 package tui
 
 import (
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/pterm/pterm"
 )
 
+var (
+	stripControl    = regexp.MustCompile("( ?\x1b\\[[0-9;]+m ?)+\n+$")
+	defaultDuration = 200 * time.Millisecond
+)
+
 type display struct {
-	area         *pterm.AreaPrinter
+	area         area
 	prompter     *prompter
 	last         time.Time
 	lastDuration time.Duration
@@ -16,19 +22,14 @@ type display struct {
 }
 
 func newDisplay(tool string) (*display, error) {
-	area, err := pterm.DefaultArea.Start()
-	if err != nil {
-		return nil, err
-	}
-
 	prompter, err := newReadlinePrompter(tool)
 	if err != nil {
 		return nil, err
 	}
 
 	return &display{
-		area:     area,
-		prompter: prompter,
+		prompter:     prompter,
+		lastDuration: defaultDuration,
 	}, nil
 }
 
@@ -44,7 +45,7 @@ func (a *display) setMultiLinePrompt(text string) {
 	lines := strings.Split(text, "\n")
 	a.prompter.SetPrompt(lines[len(lines)-1])
 	if len(lines) > 1 {
-		a.area.Update(a.area.GetContent() + "\n" + strings.Join(lines[:len(lines)-1], "\n") + "\n")
+		a.area.Update(a.area.content + "\n" + strings.Join(lines[:len(lines)-1], "\n") + "\n")
 	}
 }
 
@@ -80,15 +81,17 @@ func (a *display) Prompt(text string) (string, bool, error) {
 }
 
 func (a *display) Progress(text string) error {
+	if text == "" {
+		return nil
+	}
+
+	text = stripControl.ReplaceAllString(text, "")
+
 	if a.stopped {
-		area, err := pterm.DefaultArea.Start()
-		if err != nil {
-			return err
-		}
-		a.area = area
+		a.area = area{}
 		a.stopped = false
 		a.last = time.Time{}
-		a.lastDuration = 200 * time.Millisecond
+		a.lastDuration = defaultDuration
 	}
 
 	start := time.Now()
@@ -99,15 +102,13 @@ func (a *display) Progress(text string) error {
 			lines = lines[len(lines)-height:]
 		}
 		newText := strings.Join(lines, "\n")
-		if a.area.GetContent() != newText {
-			a.area.Update(newText)
-		}
+		a.area.Update(newText)
 		done := time.Now()
 		delta := done.Sub(start)
 		if delta > a.lastDuration {
 			a.lastDuration = delta
 		}
-		a.last = start
+		a.last = done
 	}
 
 	return nil
@@ -117,11 +118,10 @@ func (a *display) Close() error {
 	return a.prompter.Close()
 }
 
-func (a *display) Finished(text string) error {
+func (a *display) Finished(text string) {
 	if !strings.HasSuffix(text, "\n") {
 		text += "\n"
 	}
 	a.stopped = true
-	a.area.Update(text)
-	return a.area.Stop()
+	a.area.Finish(text)
 }
