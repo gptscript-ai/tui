@@ -18,12 +18,12 @@ import (
 type Confirm struct {
 	trustedMap      map[string]struct{}
 	always          []Trusted
-	client          gptscript.GPTScript
+	client          *gptscript.GPTScript
 	authFile        string
 	trustedPrefixes []string
 }
 
-func NewConfirm(appName string, client gptscript.GPTScript, trustedRepoPrefixes ...string) (*Confirm, error) {
+func NewConfirm(appName string, client *gptscript.GPTScript, trustedRepoPrefixes ...string) (*Confirm, error) {
 	authFile, err := xdg.CacheFile(fmt.Sprintf("%s/authorized.json", appName))
 	if err != nil {
 		return nil, err

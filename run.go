@@ -180,6 +180,11 @@ func Run(ctx context.Context, tool string, opts ...RunOptions) error {
 
 	var run *gptscript.Run
 	runOpt := gptscript.Options{
+		GlobalOptions: gptscript.GlobalOptions{
+			OpenAIAPIKey:  opt.OpenAIAPIKey,
+			OpenAIBaseURL: opt.OpenAIBaseURL,
+			DefaultModel:  opt.DefaultModel,
+		},
 		Confirm:             true,
 		Prompt:              true,
 		IncludeEvents:       true,
@@ -350,7 +355,7 @@ func printCall(buf *strings.Builder, calls map[string]gptscript.CallFrame, call 
 				continue
 			}
 			if child.ParentID == call.ID {
-				if len(child.Output) > 0 && child.End.IsZero() && time.Since(child.Start) > 2500*time.Millisecond {
+				if len(child.Output) > 0 && child.End.IsZero() && time.Since(child.Start) > 1000*time.Millisecond {
 					printCall(buf, calls, child, append(stack, call.ID))
 				}
 			}
