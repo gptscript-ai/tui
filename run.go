@@ -42,6 +42,7 @@ type RunOptions struct {
 	Env                   []string
 	Location              string
 	EventLog              string
+	LoadMessage           string
 
 	deleteWorkspaceOn bool
 }
@@ -71,6 +72,7 @@ func complete(opts ...RunOptions) (result RunOptions, _ error) {
 		result.UserStartConversation = first(opt.UserStartConversation, result.UserStartConversation)
 		result.Location = first(opt.Location, result.Location)
 		result.EventLog = first(opt.EventLog, result.EventLog)
+		result.LoadMessage = first(opt.LoadMessage, result.LoadMessage)
 
 		result.OpenAIAPIKey = first(opt.OpenAIAPIKey, result.OpenAIAPIKey)
 		result.OpenAIBaseURL = first(opt.OpenAIBaseURL, result.OpenAIBaseURL)
@@ -117,6 +119,20 @@ func Run(ctx context.Context, tool string, opts ...RunOptions) error {
 	if opt.deleteWorkspaceOn {
 		defer os.RemoveAll(opt.Workspace)
 	}
+
+	startCtx, started := context.WithCancel(ctx)
+	defer started()
+	go func() {
+		select {
+		case <-startCtx.Done():
+			return
+		case <-time.After(time.Second):
+		}
+
+		if opt.LoadMessage != "" {
+			fmt.Printf(opt.LoadMessage)
+		}
+	}()
 
 	client, err := gptscript.NewGPTScript(gptscript.GlobalOptions{
 		OpenAIAPIKey:  opt.OpenAIAPIKey,
@@ -224,6 +240,7 @@ func Run(ctx context.Context, tool string, opts ...RunOptions) error {
 		var text string
 
 		for event := range run.Events() {
+			started()
 			if eventOut != nil && (event.Call == nil || event.Call.Type != gptscript.EventTypeCallProgress) {
 				if err := json.NewEncoder(eventOut).Encode(map[string]any{
 					"time":  time.Now(),
