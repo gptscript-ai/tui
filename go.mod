@@ -9,7 +9,7 @@ require (
 	github.com/charmbracelet/lipgloss v0.11.0
 	github.com/chzyer/readline v1.5.1
 	github.com/fatih/color v1.17.0
-	github.com/gptscript-ai/go-gptscript v0.9.3-0.20240722014125-d757d09f606b
+	github.com/gptscript-ai/go-gptscript v0.9.3-0.20240728044543-20d868b5baa6
 	github.com/pterm/pterm v0.12.79
 	github.com/sourcegraph/go-diff-patch v0.0.0-20240223163233-798fd1e94a8e
 	github.com/stretchr/testify v1.8.4

@@ -38,6 +38,7 @@ type RunOptions struct {
 	Location              string
 	EventLog              string
 	LoadMessage           string
+	ForceSequential       bool
 	Client                *gptscript.GPTScript
 	ClientOpts            *gptscript.GlobalOptions
 
@@ -71,6 +72,7 @@ func complete(opts ...RunOptions) (result RunOptions, closeClient func(), _ erro
 		result.Location = first(opt.Location, result.Location)
 		result.EventLog = first(opt.EventLog, result.EventLog)
 		result.LoadMessage = first(opt.LoadMessage, result.LoadMessage)
+		result.ForceSequential = first(opt.ForceSequential, result.ForceSequential)
 		result.Client = first(opt.Client, result.Client)
 		result.ClientOpts = first(opt.ClientOpts, result.ClientOpts)
 	}
@@ -213,6 +215,7 @@ func Run(ctx context.Context, tool string, opts ...RunOptions) error {
 		Workspace:           opt.Workspace,
 		ChatState:           opt.ChatState,
 		Location:            opt.Location,
+		ForceSequential:     opt.ForceSequential,
 	}
 	if len(opt.Eval) == 0 {
 		run, err = client.Run(localCtx, tool, runOpt)
