@@ -23,10 +23,6 @@ import (
 const ToolCallHeader = "<tool call>"
 
 type RunOptions struct {
-	OpenAIAPIKey  string
-	OpenAIBaseURL string
-	DefaultModel  string
-
 	AppName               string
 	Eval                  []gptscript.ToolDef
 	TrustedRepoPrefixes   []string
@@ -39,10 +35,11 @@ type RunOptions struct {
 	SaveChatStateFile     string
 	Workspace             string
 	UserStartConversation *bool
-	Env                   []string
 	Location              string
 	EventLog              string
 	LoadMessage           string
+	Client                *gptscript.GPTScript
+	ClientOpts            *gptscript.GlobalOptions
 
 	deleteWorkspaceOn bool
 }
@@ -56,7 +53,9 @@ func first[T comparable](in ...T) (result T) {
 	return
 }
 
-func complete(opts ...RunOptions) (result RunOptions, _ error) {
+func complete(opts ...RunOptions) (result RunOptions, closeClient func(), _ error) {
+	closeClient = func() {}
+
 	for _, opt := range opts {
 		result.TrustedRepoPrefixes = append(result.TrustedRepoPrefixes, opt.TrustedRepoPrefixes...)
 		result.DisableCache = first(opt.DisableCache, result.DisableCache)
@@ -66,17 +65,14 @@ func complete(opts ...RunOptions) (result RunOptions, _ error) {
 		result.Workspace = first(opt.Workspace, result.Workspace)
 		result.SaveChatStateFile = first(opt.SaveChatStateFile, result.SaveChatStateFile)
 		result.ChatState = first(opt.ChatState, result.ChatState)
-		result.Env = append(result.Env, opt.Env...)
 		result.Eval = append(result.Eval, opt.Eval...)
 		result.AppName = first(opt.AppName, result.AppName)
 		result.UserStartConversation = first(opt.UserStartConversation, result.UserStartConversation)
 		result.Location = first(opt.Location, result.Location)
 		result.EventLog = first(opt.EventLog, result.EventLog)
 		result.LoadMessage = first(opt.LoadMessage, result.LoadMessage)
-
-		result.OpenAIAPIKey = first(opt.OpenAIAPIKey, result.OpenAIAPIKey)
-		result.OpenAIBaseURL = first(opt.OpenAIBaseURL, result.OpenAIBaseURL)
-		result.DefaultModel = first(opt.DefaultModel, result.DefaultModel)
+		result.Client = first(opt.Client, result.Client)
+		result.ClientOpts = first(opt.ClientOpts, result.ClientOpts)
 	}
 	if result.AppName == "" {
 		result.AppName = "gptscript-tui"
@@ -86,19 +82,38 @@ func complete(opts ...RunOptions) (result RunOptions, _ error) {
 		var err error
 		result.Workspace, err = os.MkdirTemp("", fmt.Sprintf("%s-workspace-*", result.AppName))
 		if err != nil {
-			return result, err
+			return result, closeClient, err
 		}
 		result.deleteWorkspaceOn = true
 	} else if !filepath.IsAbs(result.Workspace) {
 		var err error
 		result.Workspace, err = filepath.Abs(result.Workspace)
 		if err != nil {
-			return result, err
+			return result, closeClient, err
 		}
 	}
 
 	if err := os.MkdirAll(result.Workspace, 0700); err != nil {
-		return result, err
+		return result, closeClient, err
+	}
+
+	if result.Client != nil && result.ClientOpts != nil {
+		return result, closeClient, fmt.Errorf("only one of Client or ClientOpts may be set, not both")
+	}
+
+	if result.Client == nil {
+		var (
+			opts gptscript.GlobalOptions
+			err  error
+		)
+		if result.ClientOpts != nil {
+			opts = *result.ClientOpts
+		}
+		result.Client, err = gptscript.NewGPTScript(opts)
+		if err != nil {
+			return result, closeClient, err
+		}
+		closeClient = result.Client.Close
 	}
 
 	return
@@ -106,16 +121,17 @@ func complete(opts ...RunOptions) (result RunOptions, _ error) {
 
 func Run(ctx context.Context, tool string, opts ...RunOptions) error {
 	var (
-		opt, err         = complete(opts...)
-		input            = opt.Input
-		localCtx, cancel = signal.NotifyContext(ctx, os.Interrupt)
-		eventOut         io.Writer
+		opt, closeClient, err = complete(opts...)
+		input                 = opt.Input
+		localCtx, cancel      = signal.NotifyContext(ctx, os.Interrupt)
+		eventOut              io.Writer
 	)
 	defer cancel()
 
 	if err != nil {
 		return err
 	}
+	defer closeClient()
 	if opt.deleteWorkspaceOn {
 		defer os.RemoveAll(opt.Workspace)
 	}
@@ -134,17 +150,7 @@ func Run(ctx context.Context, tool string, opts ...RunOptions) error {
 		}
 	}()
 
-	client, err := gptscript.NewGPTScript(gptscript.GlobalOptions{
-		OpenAIAPIKey:  opt.OpenAIAPIKey,
-		OpenAIBaseURL: opt.OpenAIBaseURL,
-		DefaultModel:  opt.DefaultModel,
-		Env:           opt.Env,
-	})
-	if err != nil {
-		return err
-	}
-	defer client.Close()
-
+	client := opt.Client
 	confirm, err := NewConfirm(opt.AppName, client, opt.TrustedRepoPrefixes...)
 	if err != nil {
 		return err
@@ -180,27 +186,22 @@ func Run(ctx context.Context, tool string, opts ...RunOptions) error {
 
 	if firstInput == "" && opt.UserStartConversation != nil && *opt.UserStartConversation {
 		var ok bool
-		firstInput, ok, err = ui.Prompt("")
-		if err != nil || !ok {
-			return err
+		firstInput, ok = ui.Prompt("")
+		if !ok {
+			return nil
 		}
 	}
 
 	if firstInput == "" && opt.ChatState != "" {
 		var ok bool
-		firstInput, ok, err = ui.Prompt("Resuming conversation")
-		if err != nil || !ok {
-			return err
+		firstInput, ok = ui.Prompt("Resuming conversation")
+		if !ok {
+			return nil
 		}
 	}
 
 	var run *gptscript.Run
 	runOpt := gptscript.Options{
-		GlobalOptions: gptscript.GlobalOptions{
-			OpenAIAPIKey:  opt.OpenAIAPIKey,
-			OpenAIBaseURL: opt.OpenAIBaseURL,
-			DefaultModel:  opt.DefaultModel,
-		},
 		Confirm:             true,
 		Prompt:              true,
 		IncludeEvents:       true,
@@ -270,7 +271,7 @@ func Run(ctx context.Context, tool string, opts ...RunOptions) error {
 			}
 		}
 
-		if errors.Is(context.Canceled, localCtx.Err()) {
+		if errors.Is(localCtx.Err(), context.Canceled) {
 			text = "Interrupted\n\n"
 		}
 
@@ -284,26 +285,34 @@ func Run(ctx context.Context, tool string, opts ...RunOptions) error {
 			}
 		}
 
-		run.ChatState()
-
-		if run.State().IsTerminal() {
-			if run.State() == gptscript.Error && localCtx.Err() != nil {
-				cancel()
-				localCtx, cancel = signal.NotifyContext(ctx, os.Interrupt)
-			} else {
-				return run.Err()
+		for {
+			if run != nil && run.State().IsTerminal() {
+				if errors.Is(localCtx.Err(), context.Canceled) {
+				} else if run.Err() != nil {
+					fmt.Println(color.RedString("%v", run.Err()))
+				} else {
+					return nil
+				}
 			}
-		}
 
-		line, ok, err := ui.Prompt(getCurrentToolName(run))
-		if err != nil || !ok {
-			return err
-		}
+			// reset interrupt
+			cancel()
+			localCtx, cancel = signal.NotifyContext(ctx, os.Interrupt)
 
-		input = line
-		run, err = run.NextChat(localCtx, input)
-		if err != nil {
-			return err
+			line, ok := ui.Prompt(getCurrentToolName(run))
+			if !ok {
+				return nil
+			}
+
+			input = line
+			run, err = run.NextChat(localCtx, input)
+			if err != nil {
+				fmt.Println(color.RedString("%v", run.Err()))
+				run = nil
+				continue
+			}
+
+			break
 		}
 	}
 }

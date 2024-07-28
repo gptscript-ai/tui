@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"regexp"
 	"strings"
 	"time"
 
@@ -9,7 +8,6 @@ import (
 )
 
 var (
-	stripControl    = regexp.MustCompile("( ?\x1b\\[[0-9;]+m ?)+\n+$")
 	defaultDuration = 200 * time.Millisecond
 )
 
@@ -33,7 +31,7 @@ func newDisplay(tool string) (*display, error) {
 	}, nil
 }
 
-func (a *display) Ask(text string, sensitive bool) (string, bool, error) {
+func (a *display) Ask(text string, sensitive bool) (string, bool) {
 	a.setMultiLinePrompt(text)
 	if sensitive {
 		return a.prompter.ReadPassword()
@@ -60,9 +58,9 @@ const (
 func (a *display) AskYesNo(text string) (Answer, bool, error) {
 	a.setMultiLinePrompt(text)
 	for {
-		line, ok, err := a.prompter.Readline()
-		if !ok || err != nil {
-			return No, ok, err
+		line, ok := a.prompter.Readline()
+		if !ok {
+			return No, ok, nil
 		}
 		switch strings.ToLower(strings.TrimSpace(line)) {
 		case "y", "yes":
@@ -75,7 +73,7 @@ func (a *display) AskYesNo(text string) (Answer, bool, error) {
 	}
 }
 
-func (a *display) Prompt(text string) (string, bool, error) {
+func (a *display) Prompt(text string) (string, bool) {
 	a.prompter.SetPrompt(text)
 	return a.prompter.Readline()
 }
@@ -84,8 +82,6 @@ func (a *display) Progress(text string) error {
 	if text == "" {
 		return nil
 	}
-
-	text = stripControl.ReplaceAllString(text, "")
 
 	if a.stopped {
 		a.area = area{}

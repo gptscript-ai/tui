@@ -48,33 +48,33 @@ func newReadlinePrompter(tool string) (*prompter, error) {
 	}, nil
 }
 
-func (r *prompter) ReadPassword() (string, bool, error) {
+func (r *prompter) ReadPassword() (string, bool) {
 	cfg := r.readliner.GenPasswordConfig()
 	cfg.MaskRune = '*'
 	cfg.Prompt = r.prompt
 	cfg.UniqueEditLine = true
 	line, err := r.readliner.ReadPasswordWithConfig(cfg)
 	if errors.Is(err, readline.ErrInterrupt) {
-		return "", false, nil
+		return "", false
 	} else if errors.Is(err, io.EOF) {
-		return "", false, nil
+		return "", false
 	}
-	return strings.TrimSpace(string(line)), true, nil
+	return strings.TrimSpace(string(line)), true
 }
 
-func (r *prompter) Readline() (string, bool, error) {
+func (r *prompter) Readline() (string, bool) {
 	for {
 		line, err := r.readliner.Readline()
 		if errors.Is(err, readline.ErrInterrupt) {
-			return "", false, nil
+			return "", false
 		} else if errors.Is(err, io.EOF) {
-			return "", false, nil
+			return "", false
 		}
 		result := strings.TrimSpace(line)
 		if result == "" {
 			continue
 		}
-		return result, true, nil
+		return result, true
 	}
 }
 
