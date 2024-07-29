@@ -241,6 +241,13 @@ func toSysConfirmMessage(toolName string, event gptscript.Frame) (prompt Confirm
 		return
 	}
 
+	if strings.HasPrefix(toolName, "openapi ") && os.Getenv("GPTSCRIPT_OPENAPI_REVAMP") == "true" {
+		prompt, ok = toOpenAPIPrompt(toolName, event)
+		if ok {
+			return
+		}
+	}
+
 	text := toolName
 	if event.Call.DisplayText != "" {
 		text = strings.ToLower(event.Call.DisplayText[:1]) + event.Call.DisplayText[1:]
@@ -252,6 +259,68 @@ func toSysConfirmMessage(toolName string, event gptscript.Frame) (prompt Confirm
 			ToolName: toolName,
 		},
 	}
+}
+
+func toOpenAPIPrompt(toolName string, event gptscript.Frame) (ConfirmPrompt, bool) {
+	instructions := strings.Fields(event.Call.Tool.Instructions)
+	if len(instructions) != 4 {
+		return ConfirmPrompt{}, false
+	}
+
+	var (
+		command  = instructions[1]
+		oapiFile = instructions[2]
+	)
+
+	data := inputArgs(event)
+
+	switch command {
+	case "list":
+		return ConfirmPrompt{
+			Message: fmt.Sprintf("List operations in OpenAPI file %s\nConfirm (y/n)", oapiFile),
+		}, true
+	case "get-schema":
+		operation, _ := data["operation"].(string)
+		if operation == "" {
+			return ConfirmPrompt{}, false
+		}
+
+		return ConfirmPrompt{
+			Message: fmt.Sprintf("Get schema for operation %s in OpenAPI file %s\nConfirm (y/n)", operation, oapiFile),
+		}, true
+	case "run":
+		operation, _ := data["operation"].(string)
+		args, _ := data["args"].(map[string]any)
+		if operation == "" {
+			return ConfirmPrompt{}, false
+		}
+
+		msg := &strings.Builder{}
+		msg.WriteString("Run operation ")
+		msg.WriteString(operation)
+		if len(args) > 0 {
+			msg.WriteString(" with arguments ")
+			msg.WriteString(fmt.Sprintf("%v", args))
+		}
+		msg.WriteString(" in OpenAPI file ")
+		msg.WriteString(oapiFile)
+
+		msg.WriteString(" (or allow all ")
+		msg.WriteString(operation)
+		msg.WriteString(" calls)\nConfirm (y/n/a)")
+
+		return ConfirmPrompt{
+			Message: msg.String(),
+			AlwaysTrust: Trusted{
+				ToolName: toolName,
+				ArgPrefix: map[string]string{
+					"operation": operation,
+				},
+			},
+		}, true
+	}
+
+	return ConfirmPrompt{}, false
 }
 
 func toExecPrompt(event gptscript.Frame) (ConfirmPrompt, bool) {
