@@ -320,11 +320,35 @@ func Run(ctx context.Context, tool string, opts ...RunOptions) error {
 	}
 }
 
+func splitAtTerm(line string, width int) string {
+	var (
+		buf    = &strings.Builder{}
+		offset int
+	)
+
+	for _, field := range strings.Fields(line) {
+		if offset == 0 {
+			buf.WriteString(field)
+			offset = len(field)
+		} else if (len(field) + 1 + offset) > width {
+			buf.WriteString("\n")
+			buf.WriteString(field)
+			offset = len(field)
+		} else {
+			buf.WriteString(" ")
+			buf.WriteString(field)
+			offset += len(field) + 1
+		}
+	}
+
+	return buf.String()
+}
+
 func render(input string, run *gptscript.Run) string {
 	buf := &strings.Builder{}
 
 	if input != "" {
-		buf.WriteString(color.GreenString("> "+input) + "\n")
+		buf.WriteString(color.GreenString(splitAtTerm("> "+input+"\n", pterm.GetTerminalWidth())))
 	}
 
 	if call, ok := run.ParentCallFrame(); ok {
