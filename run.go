@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"atomicgo.dev/cursor"
 	"github.com/fatih/color"
 	"github.com/gptscript-ai/go-gptscript"
 	"github.com/pterm/pterm"
@@ -129,6 +130,7 @@ func Run(ctx context.Context, tool string, opts ...RunOptions) error {
 		eventOut              io.Writer
 	)
 	defer cancel()
+	defer cursor.Show()
 
 	if err != nil {
 		return err
@@ -256,9 +258,7 @@ func Run(ctx context.Context, tool string, opts ...RunOptions) error {
 
 			if event.Call != nil {
 				text = render(input, run)
-				if err := ui.Progress(text); err != nil {
-					return err
-				}
+				ui.Progress(text)
 			}
 
 			if ok, err := confirm.HandlePrompt(localCtx, event, ui.Ask); !ok {

@@ -24,11 +24,6 @@ func (a *area) Fd() uintptr {
 	return os.Stdout.Fd()
 }
 
-func (a *area) Finish(text string) {
-	a.Update(text)
-	cursor.Show()
-}
-
 func (a *area) Update(text string) {
 	if a.cursor == nil {
 		c := cursor.NewArea().WithWriter(a)

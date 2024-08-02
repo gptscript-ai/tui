@@ -2,21 +2,28 @@ package tui
 
 import (
 	"strings"
+	"sync"
 	"time"
 
-	"github.com/pterm/pterm"
+	"atomicgo.dev/cursor"
 )
 
 var (
-	defaultDuration = 200 * time.Millisecond
+	loopDelay = 200 * time.Millisecond
 )
 
+type displayState struct {
+	area      area
+	lastPrint string
+	content   string
+	finish    bool
+}
+
 type display struct {
-	area         area
-	prompter     *prompter
-	last         time.Time
-	lastDuration time.Duration
-	stopped      bool
+	displayState
+	prompter    *prompter
+	contentLock sync.Mutex
+	closer      func()
 }
 
 func newDisplay(tool string) (*display, error) {
@@ -25,25 +32,43 @@ func newDisplay(tool string) (*display, error) {
 		return nil, err
 	}
 
-	return &display{
-		prompter:     prompter,
-		lastDuration: defaultDuration,
-	}, nil
+	t := time.NewTicker(loopDelay)
+	d := &display{
+		prompter: prompter,
+		closer:   t.Stop,
+	}
+
+	go func() {
+		for range t.C {
+			d.paint()
+		}
+	}()
+
+	return d, nil
+}
+
+func (a *display) readline(f func() (string, bool)) (string, bool) {
+	a.paint()
+	cursor.Show()
+	defer cursor.Hide()
+	return f()
 }
 
 func (a *display) Ask(text string, sensitive bool) (string, bool) {
 	a.setMultiLinePrompt(text)
 	if sensitive {
-		return a.prompter.ReadPassword()
+		return a.readline(a.prompter.ReadPassword)
 	}
-	return a.prompter.Readline()
+	return a.readline(a.prompter.Readline)
 }
 
 func (a *display) setMultiLinePrompt(text string) {
 	lines := strings.Split(text, "\n")
 	a.prompter.SetPrompt(lines[len(lines)-1])
 	if len(lines) > 1 {
-		a.area.Update(a.area.content + "\n" + strings.Join(lines[:len(lines)-1], "\n") + "\n")
+		a.contentLock.Lock()
+		defer a.contentLock.Unlock()
+		a.content = a.area.content + "\n" + strings.Join(lines[:len(lines)-1], "\n") + "\n"
 	}
 }
 
@@ -58,7 +83,7 @@ const (
 func (a *display) AskYesNo(text string) (Answer, bool, error) {
 	a.setMultiLinePrompt(text)
 	for {
-		line, ok := a.prompter.Readline()
+		line, ok := a.readline(a.prompter.Readline)
 		if !ok {
 			return No, ok, nil
 		}
@@ -75,49 +100,49 @@ func (a *display) AskYesNo(text string) (Answer, bool, error) {
 
 func (a *display) Prompt(text string) (string, bool) {
 	a.prompter.SetPrompt(text)
-	return a.prompter.Readline()
+	return a.readline(a.prompter.Readline)
 }
 
-func (a *display) Progress(text string) error {
-	if text == "" {
-		return nil
+func (a *display) paint() {
+	a.contentLock.Lock()
+	if a.finish {
+		a.area.Update(a.content)
+		cursor.Show()
+		a.displayState = displayState{}
+		a.contentLock.Unlock()
+		return
 	}
 
-	if a.stopped {
-		a.area = area{}
-		a.stopped = false
-		a.last = time.Time{}
-		a.lastDuration = defaultDuration
+	newContent := a.content
+	a.contentLock.Unlock()
+
+	if newContent == a.lastPrint {
+		return
 	}
 
-	start := time.Now()
-	if start.Sub(a.last) > a.lastDuration {
-		lines := strings.Split(text, "\n")
-		height := pterm.GetTerminalHeight()
-		if len(lines) > height {
-			lines = lines[len(lines)-height:]
-		}
-		newText := strings.Join(lines, "\n")
-		a.area.Update(newText)
-		done := time.Now()
-		delta := done.Sub(start)
-		if delta > a.lastDuration {
-			a.lastDuration = delta
-		}
-		a.last = done
-	}
+	a.area.Update(newContent)
+	a.lastPrint = newContent
+}
 
-	return nil
+func (a *display) Progress(text string) {
+	a.contentLock.Lock()
+	defer a.contentLock.Unlock()
+	a.content = text
 }
 
 func (a *display) Close() error {
+	a.closer()
 	return a.prompter.Close()
 }
 
 func (a *display) Finished(text string) {
+	defer a.paint()
+	a.contentLock.Lock()
+	defer a.contentLock.Unlock()
+
 	if !strings.HasSuffix(text, "\n") {
 		text += "\n"
 	}
-	a.stopped = true
-	a.area.Finish(text)
+	a.finish = true
+	a.content = text
 }
