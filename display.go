@@ -58,12 +58,12 @@ func (a *display) readline(f func() (string, bool)) (string, bool) {
 	return f()
 }
 
-func (a *display) Ask(text string, sensitive bool) (string, bool) {
+func (a *display) Ask(text string, sensitive, allowEmptyResponse bool) (string, bool) {
 	a.setMultiLinePrompt(text)
 	if sensitive {
 		return a.readline(a.prompter.ReadPassword)
 	}
-	return a.readline(a.prompter.Readline)
+	return a.readline(a.prompter.Readline(allowEmptyResponse))
 }
 
 func (a *display) setMultiLinePrompt(text string) {
@@ -87,7 +87,7 @@ const (
 func (a *display) AskYesNo(text string) (Answer, bool, error) {
 	a.setMultiLinePrompt(text)
 	for {
-		line, ok := a.readline(a.prompter.Readline)
+		line, ok := a.readline(a.prompter.Readline(false))
 		if !ok {
 			return No, ok, nil
 		}
@@ -104,7 +104,7 @@ func (a *display) AskYesNo(text string) (Answer, bool, error) {
 
 func (a *display) Prompt(text string) (string, bool) {
 	a.prompter.SetPrompt(text)
-	return a.readline(a.prompter.Readline)
+	return a.readline(a.prompter.Readline(false))
 }
 
 func (a *display) paint() {

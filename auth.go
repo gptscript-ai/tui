@@ -47,9 +47,19 @@ func NewConfirm(appName string, client *gptscript.GPTScript, trustedRepoPrefixes
 	return c, nil
 }
 
-func (c *Confirm) HandlePrompt(ctx context.Context, event gptscript.Frame, prompter func(string, bool) (string, bool)) (bool, error) {
+func (c *Confirm) HandlePrompt(ctx context.Context, event gptscript.Frame, prompter func(string, bool, bool) (string, bool)) (bool, error) {
 	if !c.IsPromptEvent(event) {
 		return true, nil
+	}
+
+	if len(event.Prompt.Fields) == 0 {
+		_, ok := prompter(fmt.Sprintf("%s\nHit ENTER to continue...", event.Prompt.Message), event.Prompt.Sensitive, true)
+		if !ok {
+			return ok, nil
+		}
+		return true, c.client.PromptResponse(ctx, gptscript.PromptResponse{
+			ID: event.Prompt.ID,
+		})
 	}
 
 	values := map[string]string{}
@@ -63,7 +73,7 @@ func (c *Confirm) HandlePrompt(ctx context.Context, event gptscript.Frame, promp
 			msg = event.Prompt.Message + "\n" + msg
 		}
 
-		v, ok := prompter(msg, event.Prompt.Sensitive)
+		v, ok := prompter(msg, event.Prompt.Sensitive, false)
 		if !ok {
 			return ok, nil
 		}

@@ -62,19 +62,21 @@ func (r *prompter) ReadPassword() (string, bool) {
 	return strings.TrimSpace(string(line)), true
 }
 
-func (r *prompter) Readline() (string, bool) {
-	for {
-		line, err := r.readliner.Readline()
-		if errors.Is(err, readline.ErrInterrupt) {
-			return "", false
-		} else if errors.Is(err, io.EOF) {
-			return "", false
+func (r *prompter) Readline(allowEmpty bool) func() (string, bool) {
+	return func() (string, bool) {
+		for {
+			line, err := r.readliner.Readline()
+			if errors.Is(err, readline.ErrInterrupt) {
+				return "", false
+			} else if errors.Is(err, io.EOF) {
+				return "", false
+			}
+			result := strings.TrimSpace(line)
+			if result == "" && !allowEmpty {
+				continue
+			}
+			return result, true
 		}
-		result := strings.TrimSpace(line)
-		if result == "" {
-			continue
-		}
-		return result, true
 	}
 }
 
