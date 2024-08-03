@@ -308,6 +308,8 @@ func Run(ctx context.Context, tool string, opts ...RunOptions) error {
 			}
 
 			input = line
+			ui.Progress(render(input, nil))
+
 			run, err = run.NextChat(localCtx, input)
 			if err != nil {
 				fmt.Println(color.RedString("%v", run.Err()))
@@ -349,10 +351,13 @@ func render(input string, run *gptscript.Run) string {
 
 	if input != "" {
 		buf.WriteString(color.GreenString(splitAtTerm("> "+input+"\n", pterm.GetTerminalWidth())))
+		buf.WriteString("\n")
 	}
 
-	if call, ok := run.ParentCallFrame(); ok {
-		printCall(buf, run.Calls(), call, nil)
+	if run != nil {
+		if call, ok := run.ParentCallFrame(); ok {
+			printCall(buf, run.Calls(), call, nil)
+		}
 	}
 
 	return buf.String()

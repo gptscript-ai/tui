@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"atomicgo.dev/cursor"
+	"github.com/pterm/pterm"
 )
 
 var (
@@ -23,6 +24,7 @@ type display struct {
 	displayState
 	prompter    *prompter
 	contentLock sync.Mutex
+	paintLock   sync.Mutex
 	closer      func()
 }
 
@@ -49,6 +51,8 @@ func newDisplay(tool string) (*display, error) {
 
 func (a *display) readline(f func() (string, bool)) (string, bool) {
 	a.paint()
+	a.paintLock.Lock()
+	defer a.paintLock.Unlock()
 	cursor.Show()
 	defer cursor.Hide()
 	return f()
@@ -68,7 +72,7 @@ func (a *display) setMultiLinePrompt(text string) {
 	if len(lines) > 1 {
 		a.contentLock.Lock()
 		defer a.contentLock.Unlock()
-		a.content = a.area.content + "\n" + strings.Join(lines[:len(lines)-1], "\n") + "\n"
+		a.content = a.content + "\n" + strings.Join(lines[:len(lines)-1], "\n") + "\n"
 	}
 }
 
@@ -104,10 +108,12 @@ func (a *display) Prompt(text string) (string, bool) {
 }
 
 func (a *display) paint() {
+	a.paintLock.Lock()
+	defer a.paintLock.Unlock()
+
 	a.contentLock.Lock()
 	if a.finish {
 		a.area.Update(a.content)
-		cursor.Show()
 		a.displayState = displayState{}
 		a.contentLock.Unlock()
 		return
@@ -120,7 +126,12 @@ func (a *display) paint() {
 		return
 	}
 
-	a.area.Update(newContent)
+	lines := strings.Split(newContent, "\n")
+	height := pterm.GetTerminalHeight()
+	if len(lines) > height {
+		lines = lines[len(lines)-height:]
+	}
+	a.area.Update(strings.Join(lines, "\n"))
 	a.lastPrint = newContent
 }
 
