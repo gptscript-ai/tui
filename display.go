@@ -16,7 +16,7 @@ var (
 type displayState struct {
 	area      area
 	lastPrint string
-	content   string
+	content   func() string
 	finish    bool
 }
 
@@ -72,7 +72,10 @@ func (a *display) setMultiLinePrompt(text string) {
 	if len(lines) > 1 {
 		a.contentLock.Lock()
 		defer a.contentLock.Unlock()
-		a.content = a.content + "\n" + strings.Join(lines[:len(lines)-1], "\n") + "\n"
+		newContent := a.getContent() + "\n" + strings.Join(lines[:len(lines)-1], "\n") + "\n"
+		a.content = func() string {
+			return newContent
+		}
 	}
 }
 
@@ -107,19 +110,26 @@ func (a *display) Prompt(text string) (string, bool) {
 	return a.readline(a.prompter.Readline(false))
 }
 
+func (a *display) getContent() string {
+	if a.content == nil {
+		return ""
+	}
+	return a.content()
+}
+
 func (a *display) paint() {
 	a.paintLock.Lock()
 	defer a.paintLock.Unlock()
 
 	a.contentLock.Lock()
 	if a.finish {
-		a.area.Update(a.content)
+		a.area.Update(a.getContent())
 		a.displayState = displayState{}
 		a.contentLock.Unlock()
 		return
 	}
 
-	newContent := a.content
+	newContent := a.getContent()
 	a.contentLock.Unlock()
 
 	if newContent == a.lastPrint {
@@ -135,7 +145,7 @@ func (a *display) paint() {
 	a.lastPrint = newContent
 }
 
-func (a *display) Progress(text string) {
+func (a *display) Progress(text func() string) {
 	a.contentLock.Lock()
 	defer a.contentLock.Unlock()
 	a.content = text
@@ -155,5 +165,7 @@ func (a *display) Finished(text string) {
 		text += "\n"
 	}
 	a.finish = true
-	a.content = text
+	a.content = func() string {
+		return text
+	}
 }

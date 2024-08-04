@@ -243,7 +243,7 @@ func Run(ctx context.Context, tool string, opts ...RunOptions) error {
 	}
 
 	for {
-		var text string
+		text := func() string { return "" }
 
 		for event := range run.Events() {
 			started()
@@ -275,10 +275,10 @@ func Run(ctx context.Context, tool string, opts ...RunOptions) error {
 		}
 
 		if errors.Is(localCtx.Err(), context.Canceled) {
-			text = "Interrupted\n\n"
+			text = interrupted
 		}
 
-		ui.Finished(text)
+		ui.Finished(text())
 
 		if opt.SaveChatStateFile != "" {
 			if run.State() == gptscript.Finished {
@@ -346,7 +346,7 @@ func splitAtTerm(line string, width int) string {
 	return buf.String()
 }
 
-func render(input string, run *gptscript.Run) string {
+func renderDeferred(input string, parent *gptscript.CallFrame, calls map[string]gptscript.CallFrame) string {
 	buf := &strings.Builder{}
 
 	if input != "" {
@@ -354,13 +354,35 @@ func render(input string, run *gptscript.Run) string {
 		buf.WriteString("\n")
 	}
 
-	if run != nil {
-		if call, ok := run.ParentCallFrame(); ok {
-			printCall(buf, run.Calls(), call, nil)
-		}
+	if parent != nil {
+		printCall(buf, calls, *parent, nil)
 	}
 
 	return buf.String()
+}
+
+func render(input string, run *gptscript.Run) func() string {
+	var (
+		content string
+		parent  *gptscript.CallFrame
+		calls   map[string]gptscript.CallFrame
+	)
+
+	if run != nil {
+		call, ok := run.ParentCallFrame()
+		if ok {
+			parent = &call
+			calls = run.Calls()
+		}
+	}
+
+	return func() string {
+		if content != "" {
+			return content
+		}
+		content = renderDeferred(input, parent, calls)
+		return content
+	}
 }
 
 func printToolCall(out *strings.Builder, toolCall string) {
@@ -456,4 +478,8 @@ func getCurrentToolName(run *gptscript.Run) string {
 		return ""
 	}
 	return "@" + toolName
+}
+
+func interrupted() string {
+	return "Interrupted\n\n"
 }
