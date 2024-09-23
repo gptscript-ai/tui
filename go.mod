@@ -1,6 +1,8 @@
 module github.com/gptscript-ai/tui
 
-go 1.22.3
+go 1.23.0
+
+toolchain go1.23.1
 
 require (
 	atomicgo.dev/cursor v0.2.0
@@ -9,7 +11,7 @@ require (
 	github.com/charmbracelet/lipgloss v0.11.0
 	github.com/chzyer/readline v1.5.1
 	github.com/fatih/color v1.17.0
-	github.com/gptscript-ai/go-gptscript v0.9.4-0.20240801203434-840b14393b17
+	github.com/gptscript-ai/go-gptscript v0.9.5-rc5.0.20240920232051-64eaa0ac8caf
 	github.com/pterm/pterm v0.12.79
 	github.com/sourcegraph/go-diff-patch v0.0.0-20240223163233-798fd1e94a8e
 	golang.org/x/exp v0.0.0-20240103183307-be819d1f06fc

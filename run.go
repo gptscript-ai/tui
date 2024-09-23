@@ -206,13 +206,15 @@ func Run(ctx context.Context, tool string, opts ...RunOptions) error {
 
 	var run *gptscript.Run
 	runOpt := gptscript.Options{
+		GlobalOptions: gptscript.GlobalOptions{
+			CacheDir: opt.CacheDir,
+		},
 		Confirm:             true,
 		Prompt:              true,
 		IncludeEvents:       true,
 		DisableCache:        opt.DisableCache,
 		CredentialOverrides: opt.CredentialOverrides,
 		Input:               firstInput,
-		CacheDir:            opt.CacheDir,
 		SubTool:             opt.SubTool,
 		Workspace:           opt.Workspace,
 		ChatState:           opt.ChatState,
