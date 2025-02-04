@@ -65,7 +65,7 @@ func (c *Confirm) HandlePrompt(ctx context.Context, event gptscript.Frame, promp
 	values := map[string]string{}
 
 	for i, field := range event.Prompt.Fields {
-		msg := field
+		msg := field.Name
 		if i == 0 {
 			if len(event.Prompt.Fields) == 1 {
 				msg = ""
@@ -77,7 +77,7 @@ func (c *Confirm) HandlePrompt(ctx context.Context, event gptscript.Frame, promp
 		if !ok {
 			return ok, nil
 		}
-		values[field] = v
+		values[field.Name] = v
 	}
 
 	return true, c.client.PromptResponse(ctx, gptscript.PromptResponse{

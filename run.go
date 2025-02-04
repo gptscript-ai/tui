@@ -30,7 +30,6 @@ type RunOptions struct {
 	DisableCache          bool
 	CredentialOverrides   []string
 	Input                 string
-	CacheDir              string
 	SubTool               string
 	ChatState             string
 	SaveChatStateFile     string
@@ -62,7 +61,6 @@ func complete(opts ...RunOptions) (result RunOptions, closeClient func(), _ erro
 		result.TrustedRepoPrefixes = append(result.TrustedRepoPrefixes, opt.TrustedRepoPrefixes...)
 		result.DisableCache = first(opt.DisableCache, result.DisableCache)
 		result.CredentialOverrides = append(result.CredentialOverrides, opt.CredentialOverrides...)
-		result.CacheDir = first(opt.CacheDir, result.CacheDir)
 		result.SubTool = first(opt.SubTool, result.SubTool)
 		result.Workspace = first(opt.Workspace, result.Workspace)
 		result.SaveChatStateFile = first(opt.SaveChatStateFile, result.SaveChatStateFile)
@@ -206,9 +204,7 @@ func Run(ctx context.Context, tool string, opts ...RunOptions) error {
 
 	var run *gptscript.Run
 	runOpt := gptscript.Options{
-		GlobalOptions: gptscript.GlobalOptions{
-			CacheDir: opt.CacheDir,
-		},
+		GlobalOptions:       gptscript.GlobalOptions{},
 		Confirm:             true,
 		Prompt:              true,
 		IncludeEvents:       true,
