@@ -263,6 +263,15 @@ func toSysConfirmMessage(toolName string, event gptscript.Frame) (prompt Confirm
 		text = strings.ToLower(event.Call.DisplayText[:1]) + event.Call.DisplayText[1:]
 	}
 
+	fields := strings.Fields(toolName)
+	if suffix, ok := strings.CutPrefix(strings.Fields(toolName)[0], "mcp.invoke."); ok {
+		toolName = "MCP " + suffix
+	}
+	if text == "sys.mcp.invoke" && len(fields) >= 3 {
+		text = "MCP " + strings.Join(fields[2:], " ")
+		toolName = strings.Join(fields[:2], " ")
+	}
+
 	return ConfirmPrompt{
 		Message: fmt.Sprintf("Proceed with %s (or allow all %s calls)\nConfirm (y/n/a)", text, toolName),
 		AlwaysTrust: Trusted{
